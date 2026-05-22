@@ -45,6 +45,7 @@ import type {
   ChannelGroup,
   Image,
   ImageChannel,
+  ImageMask,
   ImageSource,
   Point,
   StoryShape,
@@ -324,6 +325,41 @@ export function setImageSource(
   if (idx < 0) return [...images];
   const next = [...images];
   next[idx] = { ...next[idx], source };
+  return next;
+}
+
+export function setImageMask(
+  images: Image[],
+  imageId: string,
+  mask: ImageMask,
+): Image[] {
+  const idx = images.findIndex((im) => im.id === imageId);
+  if (idx < 0) return [...images];
+  const next = [...images];
+  next[idx] = { ...next[idx], mask };
+  return next;
+}
+
+export function updateImageMask(
+  images: Image[],
+  imageId: string,
+  patch: Partial<ImageMask>,
+): Image[] {
+  const idx = images.findIndex((im) => im.id === imageId);
+  if (idx < 0) return [...images];
+  const cur = images[idx].mask;
+  if (!cur) return [...images];
+  const next = [...images];
+  next[idx] = { ...next[idx], mask: { ...cur, ...patch } };
+  return next;
+}
+
+export function clearImageMask(images: Image[], imageId: string): Image[] {
+  const idx = images.findIndex((im) => im.id === imageId);
+  if (idx < 0) return [...images];
+  const next = [...images];
+  const { mask: _removed, ...rest } = next[idx];
+  next[idx] = rest as Image;
   return next;
 }
 

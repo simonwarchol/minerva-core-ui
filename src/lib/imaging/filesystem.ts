@@ -142,6 +142,23 @@ const toLoaderFromUrl = async (
   return await loadOmeTiff(url);
 };
 
+/** Pick a single segmentation mask OME-TIFF (label image). */
+export async function pickMaskOmeTiffFile(): Promise<Handle.File | null> {
+  try {
+    const file = await fileOpen({
+      description: "Segmentation mask OME-TIFF",
+      mimeTypes: ["image/tiff"],
+      extensions: [".tif", ".tiff", ".ome.tif", ".ome.tiff"],
+      multiple: false,
+    });
+    if (file.handle) return file.handle;
+    return ephemeralFileHandleFromFile(file);
+  } catch (e: unknown) {
+    if (isAbortError(e)) return null;
+    throw e;
+  }
+}
+
 export {
   hasAuthorShellSupport,
   hasDirectoryPickerAccess,

@@ -86,6 +86,12 @@ class MinervaStoriesDB extends Dexie {
           await storyTable.put(rest as StoryRecord);
         }
       });
+    /** Optional `Image.mask` on document images — no store migration required. */
+    this.version(5).stores({
+      stories: "id, modifiedAt",
+      settings: "key",
+      handles: "id",
+    });
   }
 }
 

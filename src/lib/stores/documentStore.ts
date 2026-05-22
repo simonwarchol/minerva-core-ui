@@ -13,6 +13,7 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import {
+  deleteFileHandle,
   deleteFileHandlesForStory,
   getFileHandle as loadFileHandleFromDb,
   putFileHandle as persistFileHandleToDb,
@@ -31,10 +32,16 @@ import type {
   DocumentData,
   DocumentMetadata,
   Image,
+  ImageMask,
   Shape,
   Waypoint,
 } from "./documentSchema";
-import { flattenImageChannelsInDocumentOrder } from "./storeUtils";
+import {
+  clearImageMask,
+  flattenImageChannelsInDocumentOrder,
+  setImageMask,
+  updateImageMask,
+} from "./storeUtils";
 import { validateDocumentData } from "./validateDocument";
 
 export type {
@@ -89,6 +96,9 @@ export type DocumentStore = DocumentState & {
   setShapes: (shapes: Shape[]) => void;
   setChannelGroups: (channelGroups: ChannelGroup[]) => void;
   setImages: (images: Image[]) => void;
+  setImageMask: (imageId: string, mask: ImageMask) => void;
+  updateImageMask: (imageId: string, patch: Partial<ImageMask>) => void;
+  clearImageMask: (imageId: string) => Promise<void>;
   /** Merge into `metadata`; use when persisting exhibit title/version, etc. */
   setMetadata: (metadata: Partial<DocumentMetadata>) => void;
 
@@ -286,6 +296,25 @@ export const useDocumentStore = create<DocumentStore>()(
       set(() => ({ channelGroups: [...channelGroups] })),
 
     setImages: (images) => set(() => ({ images: [...images] })),
+
+    setImageMask: (imageId, mask) => {
+      const s = get();
+      set({ images: setImageMask(s.images, imageId, mask) });
+    },
+
+    updateImageMask: (imageId, patch) => {
+      const s = get();
+      set({ images: updateImageMask(s.images, imageId, patch) });
+    },
+
+    clearImageMask: async (imageId) => {
+      const s = get();
+      const im = s.images.find((i) => i.id === imageId);
+      if (im?.mask?.source.kind === "local") {
+        await deleteFileHandle(im.mask.source.handleKey);
+      }
+      set({ images: clearImageMask(s.images, imageId) });
+    },
 
     /** Prefer `get()` + object `set` (not `set(fn)`) so devtools middleware always merges metadata reliably. */
     setMetadata: (patch) => {

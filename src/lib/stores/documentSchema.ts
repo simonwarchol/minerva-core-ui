@@ -113,6 +113,15 @@ export const ImageSourceSchema = z.discriminatedUnion("kind", [
   ImageSourceDicomWebSchema,
 ]);
 
+/** Segmentation mask overlay (OME-TIFF label image, integer cell IDs per pixel). */
+export const ImageMaskSchema = z.object({
+  source: ImageSourceSchema,
+  opacity: z.number().min(0).max(1),
+  outlines: z.boolean(),
+  sizeX: z.number().int().positive().optional(),
+  sizeY: z.number().int().positive().optional(),
+});
+
 export const ImageSchema = z.object({
   id: IdSchema,
   sizeX: z.number().int().positive(),
@@ -128,6 +137,7 @@ export const ImageSchema = z.object({
   basename: z.string(),
   channels: z.array(ImageChannelSchema),
   source: ImageSourceSchema.optional(),
+  mask: ImageMaskSchema.optional(),
 });
 
 /** Row under a channel group: `channelId` is {@link ImageChannelSchema}`id`; `id` is the UI / range-slider row id. */
@@ -263,6 +273,7 @@ export type TextShape = z.infer<typeof TextShapeSchema>;
 export type Shape = z.infer<typeof ShapeSchema>;
 
 export type Image = z.infer<typeof ImageSchema>;
+export type ImageMask = z.infer<typeof ImageMaskSchema>;
 export type ImageSource = z.infer<typeof ImageSourceSchema>;
 export type ImageChannel = z.infer<typeof ImageChannelSchema>;
 

@@ -12,6 +12,7 @@ import type { LoadedSourceSummary, ValidObj } from "@/components/shared/Upload";
 import { Upload } from "@/components/shared/Upload";
 import {
   ImageViewer,
+  type MaskLoaderEntry,
   type OmeLoaderEntry,
 } from "@/components/shared/viewer/ImageViewer";
 import type {
@@ -40,7 +41,8 @@ import {
   ensureOmeHistogramDistributions,
   mergeHistogramsIntoSourceChannelsByChannelId,
 } from "@/lib/imaging/histogramLazy";
-import { type Loader, toSettings } from "@/lib/imaging/viv";
+import { loadMaskTiff } from "@/lib/imaging/maskLoader";
+import { type Loader, loaderPixelSizeXY, toSettings } from "@/lib/imaging/viv";
 import { Pool } from "@/lib/imaging/workers/Pool";
 import type {
   ConfigGroup,
@@ -50,7 +52,10 @@ import type {
 import { readConfig } from "@/lib/legacy/exhibit";
 import { bootstrapStoryPersistence } from "@/lib/persistence/bootstrap";
 import { getFileHandle, putFileHandle } from "@/lib/persistence/fileHandles";
-import { imageHandleStorageKey } from "@/lib/persistence/imageHandles";
+import {
+  imageHandleStorageKey,
+  maskHandleStorageKey,
+} from "@/lib/persistence/imageHandles";
 import { useStoryAutoSave } from "@/lib/persistence/useAutoSave";
 import { applyOmeRoisFromLoaderToFirstWaypoint } from "@/lib/shapes/applyOmeRoisToDocument";
 import { getOmeTiffImageDescriptionOmeXml } from "@/lib/shapes/omeTiffOmeDescription";
@@ -306,6 +311,40 @@ async function hydrateLoadersFromImages(images: Image[]): Promise<{
   return { omeLoaderEntries, dicomIndexList };
 }
 
+/** Rebuild mask loaders from persisted `Image.mask` rows. */
+async function hydrateMaskLoadersFromImages(
+  images: Image[],
+): Promise<MaskLoaderEntry[]> {
+  const entries: MaskLoaderEntry[] = [];
+  const pool = new Pool();
+
+  for (const im of images) {
+    const mask = im.mask;
+    if (!mask?.source) continue;
+    switch (mask.source.kind) {
+      case "url": {
+        const loader = await loadMaskTiff({ url: mask.source.url, pool });
+        entries.push({ loader, sourceImageId: im.id });
+        break;
+      }
+      case "local": {
+        const handle = await getFileHandle(mask.source.handleKey);
+        if (!handle) break;
+        if (!(await hydrateFilePermission(handle))) break;
+        if (!(await findFile({ handle }))) break;
+        const file = await handle.getFile();
+        const loader = await loadMaskTiff({ file, pool });
+        entries.push({ loader, sourceImageId: im.id });
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return entries;
+}
+
 const APP_TAB_TITLE_PREFIX =
   import.meta.env.MODE === "demo" ? "Minerva 2.0 Demo" : "Minerva";
 
@@ -363,6 +402,9 @@ const Content = (props: Props) => {
   const [omeLoaderEntries, setOmeLoaderEntries] = useState<OmeLoaderEntry[]>(
     [],
   );
+  const [maskLoaderEntries, setMaskLoaderEntries] = useState<MaskLoaderEntry[]>(
+    [],
+  );
   const [dicomIndexList, setDicomIndexList] = useState([] as DicomIndex[]);
   const {
     setActiveChannelGroup,
@@ -372,6 +414,8 @@ const Content = (props: Props) => {
   } = useAppStore();
   const setChannelGroups = useDocumentStore((s) => s.setChannelGroups);
   const setImages = useDocumentStore((s) => s.setImages);
+  const setImageMaskInStore = useDocumentStore((s) => s.setImageMask);
+  const persistFileHandle = useDocumentStore((s) => s.persistFileHandle);
   const channelGroups = useDocumentStore((s) => s.channelGroups);
   const images = useDocumentStore((s) => s.images);
   const sourceChannels = useMemo(
@@ -1008,6 +1052,120 @@ const Content = (props: Props) => {
     };
   }, [images, omeLoaderEntries.length, dicomIndexList.length]);
 
+  useEffect(() => {
+    if (!images.some((im) => im.mask?.source)) {
+      setMaskLoaderEntries([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const masks = await hydrateMaskLoadersFromImages(images);
+        if (!cancelled) setMaskLoaderEntries(masks);
+      } catch (e) {
+        console.error("[minerva] hydrate mask loaders failed", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [images]);
+
+  const onMaskPicked = useCallback(
+    async (handle: Handle.File) => {
+      const storyId = useDocumentStore.getState().activeStoryId;
+      const im = useDocumentStore.getState().images[0];
+      if (!storyId || !im) return;
+      setIsLoadingImage(true);
+      try {
+        const file = await handle.getFile();
+        const loader = await loadMaskTiff({ file, pool: new Pool() });
+        const dims = loaderPixelSizeXY(loader);
+        const key = maskHandleStorageKey(storyId, im.id);
+        if (isPersistableFileHandle(handle)) {
+          await persistFileHandle(key, handle);
+        }
+        setImageMaskInStore(im.id, {
+          source: { kind: "local", handleKey: key },
+          opacity: 0.7,
+          // Default to outline rendering — colored cell fills are visually
+          // overwhelming on multi-channel imagery; the user can flip to the
+          // filled mode from the mask controls if they want it.
+          outlines: true,
+          ...(dims ? { sizeX: dims.sizeX, sizeY: dims.sizeY } : {}),
+        });
+        if (
+          dims &&
+          im.sizeX > 0 &&
+          im.sizeY > 0 &&
+          (dims.sizeX !== im.sizeX || dims.sizeY !== im.sizeY)
+        ) {
+          console.warn("[minerva] mask dimensions differ from image", dims, {
+            sizeX: im.sizeX,
+            sizeY: im.sizeY,
+          });
+        }
+        setMaskLoaderEntries((prev) => [
+          ...prev.filter((e) => e.sourceImageId !== im.id),
+          { loader, sourceImageId: im.id },
+        ]);
+      } catch (e) {
+        console.error("[minerva] mask import failed", e);
+      } finally {
+        setIsLoadingImage(false);
+      }
+    },
+    [persistFileHandle, setImageMaskInStore],
+  );
+
+  const onMaskUrlPicked = useCallback(
+    async (url: string) => {
+      const im = useDocumentStore.getState().images[0];
+      if (!im) return;
+      setIsLoadingImage(true);
+      try {
+        const loader = await loadMaskTiff({ url, pool: new Pool() });
+        const dims = loaderPixelSizeXY(loader);
+        setImageMaskInStore(im.id, {
+          source: { kind: "url", url },
+          opacity: 0.7,
+          outlines: true,
+          ...(dims ? { sizeX: dims.sizeX, sizeY: dims.sizeY } : {}),
+        });
+        if (
+          dims &&
+          im.sizeX > 0 &&
+          im.sizeY > 0 &&
+          (dims.sizeX !== im.sizeX || dims.sizeY !== im.sizeY)
+        ) {
+          console.warn("[minerva] mask dimensions differ from image", dims, {
+            sizeX: im.sizeX,
+            sizeY: im.sizeY,
+          });
+        }
+        setMaskLoaderEntries((prev) => [
+          ...prev.filter((e) => e.sourceImageId !== im.id),
+          { loader, sourceImageId: im.id },
+        ]);
+      } catch (e) {
+        console.error("[minerva] mask URL import failed", e);
+        throw e;
+      } finally {
+        setIsLoadingImage(false);
+      }
+    },
+    [setImageMaskInStore],
+  );
+
+  const onClearMask = useCallback(async () => {
+    const im = useDocumentStore.getState().images[0];
+    if (!im?.mask) return;
+    await useDocumentStore.getState().clearImageMask(im.id);
+    setMaskLoaderEntries((prev) =>
+      prev.filter((e) => e.sourceImageId !== im.id),
+    );
+  }, []);
+
   const noLoader =
     omeLoaderEntries.length === 0 && dicomIndexList.length === 0 && !hasDemo;
 
@@ -1286,6 +1444,7 @@ const Content = (props: Props) => {
       ChannelGroups: channelGroups,
       SourceChannels: sourceChannels,
       omeLoaderEntries,
+      maskLoaderEntries,
       dicomIndexList,
       marker_names: itemRegistryMarkerNames,
       groups: itemRegistryGroups,
@@ -1298,6 +1457,7 @@ const Content = (props: Props) => {
     channelGroups,
     sourceChannels,
     omeLoaderEntries,
+    maskLoaderEntries,
     dicomIndexList,
     itemRegistryMarkerNames,
     itemRegistryGroups,
@@ -1604,6 +1764,8 @@ const Content = (props: Props) => {
           importRevision,
           imageLoaded,
           loadedSource,
+          onMaskPicked,
+          onMaskUrlPicked,
         };
         // Update mainProps with actual handles
         const mainPropsWithHandle = {
@@ -1613,6 +1775,7 @@ const Content = (props: Props) => {
           viewerConfig,
           dicomIndexList,
           omeLoaderEntries,
+          maskLoaderEntries,
           enterPlaybackPreview,
           exitPlaybackPreview,
         };

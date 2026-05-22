@@ -4,6 +4,7 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import styled from "styled-components";
 import ChevronDownIcon from "@/components/shared/icons/chevron-down.svg?react";
+import { pickMaskOmeTiffFile } from "@/lib/imaging/filesystem";
 import { applyOmeRoisFromAnnotationXmlString } from "@/lib/shapes/applyOmeRoisToDocument";
 
 type Choices = {
@@ -58,6 +59,10 @@ export type UploadProps = {
   imageLoaded: boolean;
   /** Present when `imageLoaded`; dimensions may be 0 briefly while metadata arrives. */
   loadedSource?: LoadedSourceSummary;
+  /** Attach a segmentation mask OME-TIFF (local file) to the current image. */
+  onMaskPicked?: (handle: Handle.File) => Promise<void>;
+  /** Attach a segmentation mask OME-TIFF served from a URL. */
+  onMaskUrlPicked?: (url: string) => Promise<void>;
 };
 export type ValidObj = {
   [s: string]: boolean;
@@ -330,6 +335,42 @@ const XmlImportBlock = styled.div`
   }
 `;
 
+const ImportTypeRadioGroup = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  width: 100%;
+`;
+
+const ImportTypeRadioOption = styled.label<{ $selected: boolean }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  width: 100%;
+  min-width: 0;
+  border-radius: 5px;
+  border: 1px solid ${(p) => (p.$selected ? "#666" : "#333")};
+  background: ${(p) => (p.$selected ? "#2a2a2a" : "#1a1a1a")};
+  color: ${(p) => (p.$selected ? "#fff" : "#c8d0d8")};
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    border-color: #444;
+    color: #fff;
+  }
+
+  input[type="radio"] {
+    margin: 0;
+    accent-color: #e6edf3;
+    cursor: pointer;
+  }
+`;
+
 const DisclosureButton = styled.button`
   display: inline-flex;
   align-items: center;
@@ -517,6 +558,55 @@ const FormOmeTiffUrl = (props: FormProps) => {
       </Form.Group>
       <FormGrid>
         <DarkPrimaryButton type="submit">Load</DarkPrimaryButton>
+      </FormGrid>
+    </Form>
+  );
+};
+
+/**
+ * URL form for the segmentation-mask flow. Visually parallel to
+ * `FormOmeTiffUrl`, but submits straight to a parent-provided mask handler
+ * instead of going through the shared `formProps.onSubmit` (which would
+ * route the URL through the primary-image pipeline).
+ */
+const FormOmeTiffMaskUrl = (props: {
+  loading: boolean;
+  onSubmit: (url: string) => Promise<void> | void;
+}) => {
+  const { loading, onSubmit } = props;
+  const [url, _setUrl, setUrlOnEvent] = _useState("");
+  const isValid = /^https?:\/\/.+/.test(url);
+  const handleSubmit: FormEventHandler<HTMLFormElement> = (e) => {
+    e.preventDefault();
+    if (!isValid) return;
+    void onSubmit(url);
+  };
+  return (
+    <Form onSubmit={handleSubmit} className="full-width" noValidate>
+      <Form.Group {...toGroupProps("ome_tiff_mask_url")}>
+        <Form.Label>Segmentation mask OME-TIFF URL:</Form.Label>
+        <FormGridRow hasValidation>
+          <Form.Control
+            type="text"
+            required
+            value={url}
+            name="ome_tiff_mask_url"
+            placeholder="https://example.com/mask.ome.tif"
+            onChange={setUrlOnEvent}
+            isInvalid={url.length > 0 && !isValid}
+            isValid={url.length > 0 && isValid}
+          />
+          <Form.Control.Feedback type="invalid">
+            Invalid URL
+          </Form.Control.Feedback>
+          <Form.Control.Feedback type="valid">Valid.</Form.Control.Feedback>
+          <br />
+        </FormGridRow>
+      </Form.Group>
+      <FormGrid>
+        <DarkPrimaryButton type="submit" disabled={loading || !isValid}>
+          {loading ? "Loading mask…" : "Load mask"}
+        </DarkPrimaryButton>
       </FormGrid>
     </Form>
   );
@@ -753,6 +843,8 @@ const formatDims = (w: number, h: number, c: number) => {
   return [dims, ch].filter(Boolean).join(" · ") || null;
 };
 
+type ImportType = "image" | "mask";
+
 const Upload = (props: UploadProps) => {
   const [imageFormat, setImageFormat] = useState("");
   const [updatePickerOpen, setUpdatePickerOpen] = useState(false);
@@ -761,6 +853,18 @@ const Upload = (props: UploadProps) => {
     type: "ok" | "err";
     text: string;
   } | null>(null);
+  const [maskImportFeedback, setMaskImportFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const [maskLoading, setMaskLoading] = useState(false);
+  /**
+   * Whether the next file picked through the import flow should be treated
+   * as a regular channel image or as a segmentation mask. Routing on this
+   * flag is what lets us share the single "Add image" entry point between
+   * primary-image and mask imports.
+   */
+  const [importType, setImportType] = useState<ImportType>("image");
   const xmlFileInputRef = useRef<HTMLInputElement | null>(null);
   const prevImportRev = useRef(props.importRevision);
   const {
@@ -771,6 +875,8 @@ const Upload = (props: UploadProps) => {
     importRevision,
     imageLoaded,
     loadedSource,
+    onMaskPicked,
+    onMaskUrlPicked,
   } = props;
 
   useEffect(() => {
@@ -780,8 +886,56 @@ const Upload = (props: UploadProps) => {
       setImageFormat("");
       setMappingExpanded(false);
       setXmlImportFeedback(null);
+      setMaskImportFeedback(null);
+      setImportType("image");
     }
   }, [importRevision]);
+
+  const runMaskImport = async () => {
+    if (!onMaskPicked) return;
+    setMaskLoading(true);
+    setMaskImportFeedback(null);
+    try {
+      const handle = await pickMaskOmeTiffFile();
+      if (!handle) return;
+      await onMaskPicked(handle);
+      setMaskImportFeedback({
+        type: "ok",
+        text: `Loaded mask: ${handle.name}`,
+      });
+      setUpdatePickerOpen(false);
+      setImageFormat("");
+    } catch (err: unknown) {
+      setMaskImportFeedback({
+        type: "err",
+        text: err instanceof Error ? err.message : "Could not load mask.",
+      });
+    } finally {
+      setMaskLoading(false);
+    }
+  };
+
+  const runMaskUrlImport = async (url: string) => {
+    if (!onMaskUrlPicked) return;
+    setMaskLoading(true);
+    setMaskImportFeedback(null);
+    try {
+      await onMaskUrlPicked(url);
+      setMaskImportFeedback({
+        type: "ok",
+        text: `Loaded mask: ${url}`,
+      });
+      setUpdatePickerOpen(false);
+      setImageFormat("");
+    } catch (err: unknown) {
+      setMaskImportFeedback({
+        type: "err",
+        text: err instanceof Error ? err.message : "Could not load mask.",
+      });
+    } finally {
+      setMaskLoading(false);
+    }
+  };
 
   const onAnnotationXmlSelected: ChangeEventHandler<HTMLInputElement> = (e) => {
     const file = e.target.files?.[0];
@@ -831,6 +985,8 @@ const Upload = (props: UploadProps) => {
     </XmlImportBlock>
   ) : null;
 
+  const isMaskImport = importType === "mask";
+
   const allowProps = {
     onClick: onAllow,
     className: "mb-3",
@@ -843,6 +999,11 @@ const Upload = (props: UploadProps) => {
     setImageFormat("DICOM-WEB");
   };
   const selectOmeTiffFormat = () => {
+    if (isMaskImport) {
+      setImageFormat("OME-TIFF");
+      void runMaskImport();
+      return;
+    }
     setImageFormat("OME-TIFF");
     onAllow();
   };
@@ -852,18 +1013,38 @@ const Upload = (props: UploadProps) => {
 
   let possibleActions: ReactNode = null;
   if (imageFormat === "OME-TIFF") {
-    possibleActions = (
-      <>
-        <DarkPrimaryButton {...allowProps}>Select Image</DarkPrimaryButton>
-        <DarkPrimaryButton {...recallProps}>Use recent Image</DarkPrimaryButton>
-      </>
-    );
+    if (isMaskImport) {
+      possibleActions = (
+        <DarkPrimaryButton
+          type="button"
+          disabled={maskLoading}
+          onClick={() => void runMaskImport()}
+        >
+          {maskLoading ? "Loading mask…" : "Select segmentation mask"}
+        </DarkPrimaryButton>
+      );
+    } else {
+      possibleActions = (
+        <>
+          <DarkPrimaryButton {...allowProps}>Select Image</DarkPrimaryButton>
+          <DarkPrimaryButton {...recallProps}>
+            Use recent Image
+          </DarkPrimaryButton>
+        </>
+      );
+    }
   }
-  if (imageFormat === "DICOM-WEB") {
+  if (imageFormat === "DICOM-WEB" && !isMaskImport) {
     possibleActions = <FormDicom {...formProps} />;
   }
   if (imageFormat === "OME-TIFF-URL") {
-    possibleActions = <FormOmeTiffUrl {...formProps} />;
+    if (isMaskImport) {
+      possibleActions = (
+        <FormOmeTiffMaskUrl loading={maskLoading} onSubmit={runMaskUrlImport} />
+      );
+    } else {
+      possibleActions = <FormOmeTiffUrl {...formProps} />;
+    }
   }
 
   const fullFormProps = { ...formProps, handles };
@@ -875,7 +1056,7 @@ const Upload = (props: UploadProps) => {
   const currentImageSummary = imageLoaded ? (
     loadedSource ? (
       <CurrentImageBlock>
-        <CurrentImageTitle>Current image</CurrentImageTitle>
+        <CurrentImageTitle>Current images</CurrentImageTitle>
         <CurrentImageSection>
           <ImageLabel title={loadedSource.label}>
             {loadedSource.label}
@@ -898,7 +1079,7 @@ const Upload = (props: UploadProps) => {
       </CurrentImageBlock>
     ) : (
       <CurrentImageBlock>
-        <CurrentImageTitle>Current image</CurrentImageTitle>
+        <CurrentImageTitle>Current images</CurrentImageTitle>
         <CurrentImageSection>
           <ImageMetaText>Loading details…</ImageMetaText>
         </CurrentImageSection>
@@ -906,32 +1087,102 @@ const Upload = (props: UploadProps) => {
     )
   ) : null;
 
+  const onSelectImportType = (next: ImportType) => {
+    setImportType(next);
+    // Switching type can invalidate the in-progress format step (e.g.
+    // DicomWeb is not supported for masks); reset back to the format grid
+    // so the user re-picks an appropriate flow.
+    setImageFormat("");
+    setMaskImportFeedback(null);
+  };
+
+  const typeSelector = onMaskPicked ? (
+    <Form.Group
+      {...toGroupProps("import_type")}
+      role="radiogroup"
+      aria-label="Import type"
+    >
+      <Form.Label>Type</Form.Label>
+      <ImportTypeRadioGroup>
+        {(
+          [
+            { value: "image", label: "Image" },
+            { value: "mask", label: "Segmentation mask" },
+          ] as { value: ImportType; label: string }[]
+        ).map(({ value, label }) => (
+          <ImportTypeRadioOption key={value} $selected={importType === value}>
+            <input
+              type="radio"
+              name="import_type"
+              value={value}
+              checked={importType === value}
+              onChange={() => onSelectImportType(value)}
+            />
+            <span>{label}</span>
+          </ImportTypeRadioOption>
+        ))}
+      </ImportTypeRadioGroup>
+    </Form.Group>
+  ) : null;
+
+  // DicomWeb segmentation is a separate IOD (DICOM-SEG, SOP class
+  // 1.2.840.10008.5.1.4.1.1.66.4) with its own decoder requirements, so the
+  // DicomWeb option is hidden for masks until that pipeline exists. OME-TIFF
+  // (local + URL) routes through `loadMaskTiff`, which falls back to a
+  // single-IFD GeoTIFF read when the OME-XML declares phantom IFDs — that
+  // covers virtually every label-image writer in the wild.
+  const showMaskUrlOption = isMaskImport && Boolean(onMaskUrlPicked);
   const formatPickerGrid = (
     <FullWidthGrid>
-      <DarkPrimaryButton
-        onClick={selectDicomWebFormat}
-        className="dicom-toggle"
-      >
-        <span>DicomWeb</span>
-      </DarkPrimaryButton>
-      <FormatGridHint>Connect to a DICOMweb™ Proxy</FormatGridHint>
+      {isMaskImport ? null : (
+        <>
+          <DarkPrimaryButton
+            onClick={selectDicomWebFormat}
+            className="dicom-toggle"
+          >
+            <span>DicomWeb</span>
+          </DarkPrimaryButton>
+          <FormatGridHint>Connect to a DICOMweb™ Proxy</FormatGridHint>
+        </>
+      )}
       <DarkPrimaryButton onClick={selectOmeTiffFormat} className="dicom-toggle">
         <span>OME-TIFF</span>
       </DarkPrimaryButton>
-      <FormatGridHint>Open an OME-TIFF from a local file</FormatGridHint>
-      <DarkPrimaryButton
-        onClick={selectOmeTiffUrlFormat}
-        className="dicom-toggle"
-      >
-        <span>OME-TIFF URL</span>
-      </DarkPrimaryButton>
-      <FormatGridHint>Load an OME-TIFF from a URL</FormatGridHint>
+      <FormatGridHint>
+        {isMaskImport
+          ? "Open a segmentation-mask OME-TIFF from a local file"
+          : "Open an OME-TIFF from a local file"}
+      </FormatGridHint>
+      {!isMaskImport || showMaskUrlOption ? (
+        <>
+          <DarkPrimaryButton
+            onClick={selectOmeTiffUrlFormat}
+            className="dicom-toggle"
+          >
+            <span>OME-TIFF URL</span>
+          </DarkPrimaryButton>
+          <FormatGridHint>
+            {isMaskImport
+              ? "Load a segmentation-mask OME-TIFF from a URL"
+              : "Load an OME-TIFF from a URL"}
+          </FormatGridHint>
+        </>
+      ) : null}
     </FullWidthGrid>
   );
+
+  const maskPickerFeedback =
+    isMaskImport && maskImportFeedback ? (
+      <XmlImportMessage $err={maskImportFeedback.type === "err"}>
+        {maskImportFeedback.text}
+      </XmlImportMessage>
+    ) : null;
 
   const closeUpdatePicker = () => {
     setUpdatePickerOpen(false);
     setImageFormat("");
+    setImportType("image");
+    setMaskImportFeedback(null);
   };
 
   const showUseRecentInUpdateRow = handles.length > 0 && !imageLoaded;
@@ -943,9 +1194,11 @@ const Upload = (props: UploadProps) => {
         onClick={() => {
           setUpdatePickerOpen(true);
           setImageFormat("");
+          setImportType("image");
+          setMaskImportFeedback(null);
         }}
       >
-        Update Image
+        Add image
       </DarkPrimaryButton>
       {showUseRecentInUpdateRow ? (
         <DarkPrimaryButton type="button" onClick={onRecall}>
@@ -981,10 +1234,14 @@ const Upload = (props: UploadProps) => {
         </ImagesBackButton>
         {imageLoaded ? currentImageSummary : null}
         {annotationXmlPanel}
+        {typeSelector}
         <UploadDiv>
           {imageFormat === "" ? formatPickerGrid : null}
           {possibleActions}
-          {imageFormat === "OME-TIFF" ? <FormAny {...fullFormProps} /> : null}
+          {imageFormat === "OME-TIFF" && !isMaskImport ? (
+            <FormAny {...fullFormProps} />
+          ) : null}
+          {maskPickerFeedback}
         </UploadDiv>
       </ImagesTabShell>
     );

@@ -12,6 +12,7 @@ import {
 import { ChannelGroups } from "./ChannelGroups";
 import { ChannelGroupsMasterDetail } from "./ChannelGroupsMasterDetail";
 import { ChannelLegend } from "./ChannelLegend";
+import { MaskControls } from "./MaskControls";
 
 export type ChannelPanelProps = {
   children: ReactNode;
@@ -192,6 +193,7 @@ export const ChannelPanel = (props: ChannelPanelProps) => {
         <WrapCore>
           {allGroups}
           <ChannelLegend {...legendProps} />
+          <MaskControls />
         </WrapCore>
       </WrapContent>
     </div>
@@ -228,6 +230,7 @@ export const ChannelPanel = (props: ChannelPanelProps) => {
         }}
       >
         {channel_list}
+        <MaskControls />
       </div>
     </>,
   );

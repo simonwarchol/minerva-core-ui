@@ -7,3 +7,8 @@ export function imageHandleStorageKey(
 ): string {
   return `story:${storyId}:image:${imageId}`;
 }
+
+/** Segmentation mask handle for the same story image row. */
+export function maskHandleStorageKey(storyId: string, imageId: string): string {
+  return `story:${storyId}:mask:${imageId}`;
+}

@@ -13,6 +13,7 @@ import "@deck.gl/widgets/stylesheet.css";
 import type { Layer } from "@deck.gl/core";
 import { PolygonLayer } from "@deck.gl/layers";
 import { LoadingWidget } from "@/components/shared/viewer/layers/LoadingWidget";
+import { createMaskOverlayLayer } from "@/components/shared/viewer/layers/MaskOverlayLayer";
 import { createTileLayers, loadDicom } from "@/lib/imaging/dicom.js";
 import type { DicomIndex } from "@/lib/imaging/dicomIndex";
 import type { Config, Loader } from "@/lib/imaging/viv";
@@ -57,8 +58,15 @@ export type OmeLoaderEntry = {
   sourceImageId: string;
 };
 
+/** Segmentation mask loader keyed to the parent `Image.id`. */
+export type MaskLoaderEntry = {
+  loader: Loader;
+  sourceImageId: string;
+};
+
 export type ImageViewerProps = {
   omeLoaderEntries: OmeLoaderEntry[];
+  maskLoaderEntries?: MaskLoaderEntry[];
   stories: Story[];
   dicomIndexList: DicomIndex[];
   viewerConfig: Config;
@@ -199,6 +207,7 @@ export const ImageViewer = (props: ImageViewerProps) => {
   const windowSize = useWindowSize();
   const {
     omeLoaderEntries,
+    maskLoaderEntries = [],
     dicomIndexList,
     groups,
     overlayLayers = [],
@@ -220,6 +229,7 @@ export const ImageViewer = (props: ImageViewerProps) => {
   } = useAppStore();
   const channelRendering = useAppStore((s) => s.channelRendering);
   const channelGroups = useDocumentStore((s) => s.channelGroups);
+  const docImages = useDocumentStore((s) => s.images);
   useShapeLayers(authoringWaypointEditorOpen);
   const [viewportSize, setViewportSize] = useState(windowSize);
   const [_canvas, _setCanvas] = useState(null);
@@ -730,11 +740,31 @@ export const ImageViewer = (props: ImageViewerProps) => {
     });
   }, [imageShape.x, imageShape.y]);
 
+  const maskLayers = useMemo(() => {
+    if (maskLoaderEntries.length === 0) return [];
+    const imageById = new Map(docImages.map((im) => [im.id, im]));
+    const layers: Layer[] = [];
+    for (const entry of maskLoaderEntries) {
+      const im = imageById.get(entry.sourceImageId);
+      const mask = im?.mask;
+      if (!mask) continue;
+      const layer = createMaskOverlayLayer({
+        maskLoader: entry.loader,
+        sourceImageId: entry.sourceImageId,
+        opacity: mask.opacity,
+        outlines: mask.outlines,
+      });
+      if (layer) layers.push(layer as Layer);
+    }
+    return layers;
+  }, [maskLoaderEntries, docImages]);
+
   const allLayers = useMemo(() => {
     const imageStack = omeTiffLayers.length > 0 ? omeTiffLayers : dicomLayers;
     const layers: Layer[] = [
       worldPickSurfaceLayer,
       ...imageStack,
+      ...maskLayers,
       ...overlayLayers,
     ];
     if (scaleBarLayer) layers.push(scaleBarLayer);
@@ -742,6 +772,7 @@ export const ImageViewer = (props: ImageViewerProps) => {
   }, [
     dicomLayers,
     omeTiffLayers,
+    maskLayers,
     overlayLayers,
     scaleBarLayer,
     worldPickSurfaceLayer,
