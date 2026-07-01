@@ -239,8 +239,9 @@ export const ImageViewer = (props: ImageViewerProps) => {
   // Memoize initial view state
   const initialViewState = useMemo(() => {
     const n_levels = firstLoader === null ? 1 : firstLoader.loader.data.length;
+    const zoom = n_levels > 1 ? -(n_levels - 1) : 0;
     return {
-      zoom: -n_levels,
+      zoom,
       target: [imageShape.x / 2, imageShape.y / 2, 0],
     } as OrthographicViewState;
   }, [firstLoader, imageShape]);

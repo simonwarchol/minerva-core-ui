@@ -1540,7 +1540,7 @@ const emptyExhibitConfig: ExhibitConfig = {
   Groups: [],
 };
 
-const DEMO_JPEG_URL = "crc-export";
+const DEMO_JPEG_URL = "jpeg-test";
 const DEMO_CRC_OME_TIFF_URL =
   "https://lsp-public-data.s3.amazonaws.com/lin-2021-crc-atlas/CRC01-096-097.ome.tif";
 

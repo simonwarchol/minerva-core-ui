@@ -7,8 +7,8 @@ class JpegImage {
     this.imagePath = opts.imagePath;
     this.tileWidth = tileSize;
     this.tileHeight = tileSize;
-    this.imageHeight = 27120; //TODO
-    this.imageWidth = 26139; //TODO
+    this.imageHeight = opts.imageHeight ?? 27120; //TODO
+    this.imageWidth = opts.imageWidth ?? 26139; //TODO
   }
 
   async getTileOrStrip(x, y, sample) {
@@ -22,37 +22,30 @@ class JpegImage {
     const fname = `${level}_${x}_${y}.jpg`;
     const url = `${ipath}/${lpath}/${fname}`;
     const response = await fetch(url);
-    console.log({ url });
     const decoder = new ImageDecoder({
       data: response.body,
       type: "image/jpeg",
     });
     const { image } = await decoder.decode();
     const { displayWidth, displayHeight } = image;
-    const data_length = displayWidth * displayHeight;
-    console.log({ image });
-    const tileSize = this.tileSize;
-    const in_data = new Uint8Array(4 * data_length);
-    const data = new Uint16Array(tileSize ** 2); // TODO
+    const in_data = new Uint8Array(4 * displayWidth * displayHeight);
+    const data = new Uint16Array(displayWidth * displayHeight);
     image.copyTo(in_data);
     for (let h = 0; h < displayHeight; h += 1) {
       for (let w = 0; w < displayWidth; w += 1) {
         const i = displayWidth * h + w;
-        const j = tileSize * h + w;
-        data[j] = in_data[i * 4] * 256;
+        data[i] = in_data[i * 4] * 256;
       }
     }
-    return { x, y, sample, data };
+    return { x, y, sample, data, width: displayWidth, height: displayHeight };
   }
 
   async _readRaster({ x, y, /*width, height,*/ sample }) {
-    const { tileHeight, tileWidth } = this;
     const tile = await this.getTileOrStrip(x, y, sample);
-    const data = new Uint16Array(tile.data.buffer);
     return {
-      data,
-      width: tileWidth,
-      height: tileHeight,
+      data: new Uint16Array(tile.data.buffer),
+      width: tile.width,
+      height: tile.height,
     };
   }
 

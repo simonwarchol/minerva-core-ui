@@ -1,35 +1,78 @@
-import { MultiscaleImageLayer } from "@hms-dbmi/viv";
+import { MultiscaleImageLayer, XRLayer } from "@hms-dbmi/viv";
 import { JpegImage } from "../jpeg-image";
 import { JpegPixelSource } from "../jpeg-pixel-source";
 
-function createJpegLayers(meta) {
+/** Viv TileLayer busts its cache when `selections` ref changes (updateTriggers). */
+let cachedSelectionsKey = "";
+let cachedSelections = null;
+
+function stableSelections(selections) {
+  const key = selections.map(({ z, t, c }) => `${z},${t},${c}`).join("|");
+  if (key === cachedSelectionsKey && cachedSelections) {
+    return cachedSelections;
+  }
+  cachedSelectionsKey = key;
+  cachedSelections = selections;
+  return selections;
+}
+
+const BAKED_CONTRAST = Object.freeze([0, 65535]);
+
+/**
+ * Viv default renderSubLayers uses loader[0] (full-res) for edge-tile bounds. Our JPEG
+ * tiles decode smaller than 1024², which triggers that path and stretches bounds to the
+ * full 4096×4096 image — overlapping sublayers and duplicate tile labels after pan/zoom.
+ */
+function jpegRenderSubLayers(props) {
+  const {
+    bbox: { left, bottom, right, top },
+    index: { x, y, z },
+  } = props.tile;
+  const { data, maxZoom } = props;
+  if ([left, bottom, right, top].some((v) => v < 0) || !data) {
+    return null;
+  }
+  return new XRLayer(props, {
+    channelData: data,
+    bounds: [left, bottom, right, top],
+    id: `jpeg-tile-${z}-${x}-${y}`,
+    tileId: { x, y, z },
+    interpolation: z === maxZoom ? "nearest" : "linear",
+  });
+}
+
+function getJpegImageLayerProps(meta) {
   const { channelsVisible, colors, contrastLimits, selections } = meta.settings;
   const visible = channelsVisible.some((x) => x);
   const { imagePath, jpegLoader } = meta;
   const imageID = imagePath.replace("/", "-");
-  console.log({ imageID, TODO: "TODO", channelsVisible });
-  const imageProps = {
+  return {
     visible,
     loader: jpegLoader,
-    // https://deck.gl/docs/api-reference/geo-layers/tile-layer#refinementstrategy
+    excludeBackground: true,
     refinementStrategy: "no-overlap",
-    // Include contrast limits in ID to force layer recreation when they change
-    // This prevents flash when switching channel groups
-    id: `${imageID}-${contrastLimits.map(([l, u]) => `${l}-${u}`).join("-")}`,
+    renderSubLayers: jpegRenderSubLayers,
+    // Stable id — must not change when channels toggle or deck orphans TileLayer children.
+    id: imageID,
     channelsVisible,
     colors,
-    contrastLimits,
-    selections,
+    contrastLimits: contrastLimits.map(() => BAKED_CONTRAST),
+    selections: stableSelections(selections),
   };
-  return new MultiscaleImageLayer(imageProps);
+}
+
+function createJpegLayers(meta) {
+  return new MultiscaleImageLayer(getJpegImageLayerProps(meta));
 }
 
 const toIndexer = (opts) => {
-  const { imagePath } = opts;
+  const { imagePath, imageWidth, imageHeight } = opts;
   return (sel, level) => {
     return new JpegImage({
       imagePath,
       level,
+      imageWidth,
+      imageHeight,
       ...sel,
     });
   };
@@ -54,6 +97,8 @@ const loadJpeg = (meta) => {
   const levels = [0, 1, 2]; // TODO
   const pyramidIndexer = toIndexer({
     imagePath,
+    imageWidth: width,
+    imageHeight: height,
   });
   const data = levels.map((level) => {
     const axes = {
@@ -113,4 +158,4 @@ const loadJpeg = (meta) => {
   };
 };
 
-export { createJpegLayers, loadJpeg };
+export { createJpegLayers, getJpegImageLayerProps, loadJpeg };

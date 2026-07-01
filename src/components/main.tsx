@@ -48,7 +48,7 @@ import {
   ensureOmeHistogramDistributions,
   mergeHistogramsIntoSourceChannelsByChannelId,
 } from "@/lib/imaging/histogramLazy";
-import { createJpegLayers, loadJpeg } from "@/lib/imaging/jpeg.js";
+import { getJpegImageLayerProps, loadJpeg } from "@/lib/imaging/jpeg.js";
 import { type Loader, toSettings } from "@/lib/imaging/viv";
 import { Pool } from "@/lib/imaging/workers/Pool";
 import type {
@@ -1556,11 +1556,13 @@ const Content = (props: Props) => {
       jpegLoaderEntries.map(({ loader }) => {
         const imagePath = "jpeg-test"; // TODO: from image source metadata
         return ({ mainSettings }) =>
-          createJpegLayers({
-            jpegLoader: loader.data,
-            settings: mainSettings,
-            imagePath,
-          });
+          new MultiscaleImageLayer(
+            getJpegImageLayerProps({
+              jpegLoader: loader.data,
+              settings: mainSettings,
+              imagePath,
+            }),
+          );
       }),
     );
   }, [dicomIndexList, omeLoaderEntries, jpegLoaderEntries]);

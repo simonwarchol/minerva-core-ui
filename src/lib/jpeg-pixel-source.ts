@@ -17,6 +17,7 @@ type ReadRasterProps = {
   y?: number;
   height?: number;
   width?: number;
+  signal?: AbortSignal;
 };
 
 class JpegPixelSource {
@@ -29,7 +30,7 @@ class JpegPixelSource {
   constructor(indexer, tileSize, shape) {
     this._indexer = indexer;
     this.tileSize = tileSize;
-    this.labels = ["z", "c", "t", "y", "x"];
+    this.labels = ["t", "c", "z", "y", "x"];
     this.dtype = "Uint16";
     this.shape = shape;
   }
@@ -46,7 +47,6 @@ class JpegPixelSource {
   }
 
   async _readRasters(image: typeof JpegImage, props: ReadRasterProps = {}) {
-    const index = [image.c, props.x, props.y].join("-");
     const raster = await image.readRasters({
       ...props,
     });
@@ -55,17 +55,32 @@ class JpegPixelSource {
       throw "__vivSignalAborted";
     }
 
-    const { data, width, height } = raster;
-    return {
-      data,
-      width,
-      height,
-    };
+    const extentW = props.width ?? this.tileSize;
+    const extentH = props.height ?? this.tileSize;
+    if (!raster?.data) {
+      return {
+        data: new Uint16Array(extentW * extentH),
+        width: extentW,
+        height: extentH,
+      };
+    }
+    // Keep decoded JPEG dimensions; jpegRenderSubLayers places tiles via Deck bbox.
+    return raster;
   }
 
-  _getTileExtent(_x, _y) {
-    const height = this.tileSize;
-    const width = this.tileSize;
+  _getTileExtent(x, y) {
+    const [levelHeight, levelWidth] = this.shape.slice(-2);
+    let height = this.tileSize;
+    let width = this.tileSize;
+    const maxXTileCoord = Math.floor(levelWidth / this.tileSize);
+    const maxYTileCoord = Math.floor(levelHeight / this.tileSize);
+
+    if (x === maxXTileCoord && levelWidth % this.tileSize !== 0) {
+      width = levelWidth % this.tileSize;
+    }
+    if (y === maxYTileCoord && levelHeight % this.tileSize !== 0) {
+      height = levelHeight % this.tileSize;
+    }
     return { height, width };
   }
 
