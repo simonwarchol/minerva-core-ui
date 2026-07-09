@@ -5,10 +5,8 @@ import { ImageExporter } from "@/components/playback/ImageExporter";
 import { Presentation } from "@/components/playback/Presentation";
 import type { ChannelPanelProps } from "@/components/shared/channel/ChannelPanel";
 import { ChannelPanel } from "@/components/shared/channel/ChannelPanel";
-import type {
-  ItemRegistryGroup,
-  OmeLoaderEntry,
-} from "@/components/shared/viewer/ImageViewer";
+import type { OmeLoaderEntry } from "@/components/shared/viewer/ImageViewer";
+import type { ViewerChannelGroup } from "@/lib/channel/viewerChannelGroups";
 import type { DicomIndex } from "@/lib/imaging/dicomIndex";
 import type { Config } from "@/lib/imaging/viv";
 
@@ -25,7 +23,7 @@ export type PlaybackRouterProps = {
   handles: Handle.File[];
   in_f: string;
   viewerConfig: Config;
-  groups: ItemRegistryGroup[];
+  viewerChannelGroups: ViewerChannelGroup[];
   directory_handle: FileSystemDirectoryHandle;
   exitPlaybackPreview?: () => void;
   dicomIndexList: DicomIndex[];
@@ -79,7 +77,7 @@ export const PlaybackRouter = (props: PlaybackRouterProps) => {
     out = (
       <ImageExporter
         in_f={props.in_f}
-        groups={props.groups}
+        viewerChannelGroups={props.viewerChannelGroups}
         handles={props.handles}
         stopExport={props.stopExport}
         viewerConfig={props.viewerConfig}

@@ -14,12 +14,11 @@ import "@deck.gl/widgets/stylesheet.css";
 import type { Layer } from "@deck.gl/core";
 import { PolygonLayer } from "@deck.gl/layers";
 import { LoadingWidget } from "@/components/shared/viewer/layers/LoadingWidget";
-import type { Config, Loader } from "@/lib/imaging/viv";
+import type { Loader } from "@/lib/imaging/viv";
 import { createSam2ImageFetcher } from "@/lib/sam2/sam2ImageFetcher";
 import { useShapeLayers } from "@/lib/shapes/shapeLayers";
 import type { OverlayLayer } from "@/lib/shapes/shapeModel";
 import { useAppStore } from "@/lib/stores/appStore";
-import { useDocumentStore } from "@/lib/stores/documentStore";
 import { useWindowSize } from "@/lib/util/useWindowSize";
 import { ORTHO_VIEW_ID, SCALEBAR_VIEW_ID } from "@/lib/viewer/deckViewIds";
 import { createDragHandlers } from "@/lib/viewer/dragHandlers";
@@ -35,19 +34,6 @@ import {
 } from "@/lib/waypoints/waypointThumbnail";
 
 type ImageLayer = TileLayer | typeof MultiscaleImageLayer;
-
-type ItemRegistryChannel = {
-  name: string;
-  color: string;
-  contrast: [number, number];
-};
-
-export type ItemRegistryGroup = {
-  State: { Expanded: boolean };
-  channels: ItemRegistryChannel[];
-  name: string;
-  g: number;
-};
 
 /** One OME-TIFF pyramid + the document `Image.id` carried on flat source channels. */
 export type OmeLoaderEntry = {
@@ -80,7 +66,6 @@ export type ImageViewerProps = {
   imageLayers: Layer[];
   mainSettingsList: MainSettings[];
   loaderList: LoaderList;
-  viewerConfig: Config;
   overlayLayers?: OverlayLayer[];
   activeTool: string;
   isDragging?: boolean;
@@ -108,10 +93,6 @@ const SquareViewportOverlay = styled.div`
   transform: translate(-50%, -50%);
   box-sizing: border-box;
 `;
-
-const _isElement = (x = {}): x is HTMLElement => {
-  return ["Width", "Height"].every((k) => `client${k}` in x);
-};
 
 /** Normalize view state to flat { zoom, target } — Deck may return ortho-nested. */
 const toFlatViewState = (
@@ -152,23 +133,14 @@ export const ImageViewer = (props: ImageViewerProps) => {
     isDragging = false,
     hoveredShapeId = null,
     onOverlayInteraction,
-    viewerConfig,
     showSquareViewportOverlay = false,
     squareViewportScale = 0.9,
     squareViewportColor = "rgba(255, 255, 255, 0.9)",
     squareViewportBorderWidth = 2,
   } = props;
-  const {
-    activeChannelGroupId,
-    channelVisibilities,
-    sam2Processing,
-    authoringWaypointEditorOpen,
-  } = useAppStore();
-  const channelRendering = useAppStore((s) => s.channelRendering);
-  const channelGroups = useDocumentStore((s) => s.channelGroups);
+  const { sam2Processing, authoringWaypointEditorOpen } = useAppStore();
   useShapeLayers(authoringWaypointEditorOpen);
   const [viewportSize, setViewportSize] = useState(windowSize);
-  const [_canvas, _setCanvas] = useState(null);
   const rootRef = useRef<HTMLElement | null>(null);
   const deckRef = useRef<DeckGLRef | null>(null);
 
@@ -330,13 +302,17 @@ export const ImageViewer = (props: ImageViewerProps) => {
         imageShape.x,
         imageShape.y,
       );
-      //TODO
-      //setSam2ImageFetcher(fetcher);
+      setSam2ImageFetcher(fetcher);
     } else {
-      //TODO
-      //setSam2ImageFetcher(null);
+      setSam2ImageFetcher(null);
     }
-  }, [firstLoader, mainSettingsList, imageShape.x, imageShape.y]);
+  }, [
+    firstLoader,
+    mainSettingsList,
+    imageShape.x,
+    imageShape.y,
+    setSam2ImageFetcher,
+  ]);
 
   useEffect(() => {
     setSam2ViewState(viewState);
@@ -410,6 +386,8 @@ export const ImageViewer = (props: ImageViewerProps) => {
       return;
     }
 
+    ignoreNextViewStateChangeRef.current = true;
+
     const vs = getWaypointViewState(
       targetWaypointCamera,
       refImageWidth,
@@ -446,6 +424,7 @@ export const ImageViewer = (props: ImageViewerProps) => {
 
     return () => {
       window.clearTimeout(clearId);
+      ignoreNextViewStateChangeRef.current = false;
     };
   }, [
     targetWaypointCamera,
@@ -714,7 +693,10 @@ export const ImageViewer = (props: ImageViewerProps) => {
   // Memoize view state change handler.
   const handleViewStateChange = useCallback(
     ({ viewState: nextViewState }) => {
-      if (ignoreNextViewStateChangeRef.current) return;
+      if (ignoreNextViewStateChangeRef.current) {
+        ignoreNextViewStateChangeRef.current = false;
+        return;
+      }
       // Only skip while dragging an annotation (move tool). Do not skip for
       // viewport pan/zoom while using brush or other tools — otherwise the store
       // keeps a stale camera and waypoint overwrite saves the wrong view.

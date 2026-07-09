@@ -102,25 +102,15 @@ const GroupAltRow = styled.button`
 
 const GroupRow = (props: { group: ChannelGroup }) => {
   const { group } = props;
-  const { name } = group;
-
   const { setActiveChannelGroup } = useAppStore();
-  const docChannelGroups = useDocumentStore((s) => s.channelGroups);
-  const row_group = React.useMemo(
-    () =>
-      docChannelGroups.find((grp) => grp.name === name) || docChannelGroups[0],
-    [docChannelGroups, name],
-  );
 
   const toGroup = () => {
-    if (row_group) {
-      setActiveChannelGroup(row_group.id);
-    }
+    setActiveChannelGroup(group.id);
   };
 
   return (
     <GroupAltRow type="button" onClick={toGroup}>
-      {name}
+      {group.name}
     </GroupAltRow>
   );
 };

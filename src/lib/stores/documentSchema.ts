@@ -273,7 +273,7 @@ export type ImageSource = z.infer<typeof ImageSourceSchema>;
 export type ImageChannel = z.infer<typeof ImageChannelSchema>;
 
 /**
- * Flattened view of a nested channel plus parent `imageId` (for Viv / ItemRegistry).
+ * Flattened view of a nested channel plus parent `imageId` (for Viv / viewer channel groups).
  * Build lists with `flattenImageChannelsInDocumentOrder` in `storeUtils.ts`.
  */
 export type Channel = ImageChannel & {

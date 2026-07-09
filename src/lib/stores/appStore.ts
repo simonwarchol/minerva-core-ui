@@ -2128,7 +2128,7 @@ export const useAppStore = create<AppStore>()(
           shapeIds.length > 0 &&
           shapesForLookup.length === 0
         ) {
-          // Registry not hydrated yet (e.g. ItemRegistry.Shapes after Stories); skip so we
+          // Shapes not hydrated yet (e.g. after stories load); skip so we
           // don't clear imported overlays and re-import nothing.
           return;
         }

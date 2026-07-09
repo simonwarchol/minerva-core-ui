@@ -4,10 +4,8 @@ import * as React from "react";
 import { useMemo, useState } from "react";
 import hash from "stable-hash";
 import styled from "styled-components";
-import type {
-  ItemRegistryGroup,
-  OmeLoaderEntry,
-} from "@/components/shared/viewer/ImageViewer";
+import type { OmeLoaderEntry } from "@/components/shared/viewer/ImageViewer";
+import type { ViewerChannelGroup } from "@/lib/channel/viewerChannelGroups";
 import type { DicomIndex } from "@/lib/imaging/dicomIndex";
 import { toLoader } from "@/lib/imaging/filesystem";
 import type { Config } from "@/lib/imaging/viv";
@@ -425,7 +423,7 @@ export type ImageExporterProps = {
   handles: Handle.File[];
   directory_handle: Handle.Dir;
   stopExport: () => void;
-  groups: ItemRegistryGroup[];
+  viewerChannelGroups: ViewerChannelGroup[];
   dicomIndexList: DicomIndex[];
   omeLoaderEntries: OmeLoaderEntry[];
   viewerConfig: Config;
@@ -436,7 +434,7 @@ export const ImageExporter = (props: ImageExporterProps) => {
     variant: "primary",
     className: "mb-3",
   };
-  const { groups, viewerConfig } = props;
+  const { viewerChannelGroups, viewerConfig } = props;
   const { omeLoaderEntries, dicomIndexList } = props;
 
   const { activeChannelGroupId, channelVisibilities } = useAppStore();
@@ -447,7 +445,7 @@ export const ImageExporter = (props: ImageExporterProps) => {
       toSettingsInternal(
         loader,
         modality,
-        groups,
+        viewerChannelGroups,
         activeChannelGroupId,
         channelVisibilities,
         viewerConfig.toSettings,
@@ -456,7 +454,7 @@ export const ImageExporter = (props: ImageExporterProps) => {
     );
   }, [
     omeLoaderEntries,
-    groups,
+    viewerChannelGroups,
     activeChannelGroupId,
     channelVisibilities,
     viewerConfig.toSettings,
@@ -468,7 +466,7 @@ export const ImageExporter = (props: ImageExporterProps) => {
       return toSettingsInternal(
         dicomIndex.loader,
         modality,
-        groups,
+        viewerChannelGroups,
         activeChannelGroupId,
         channelVisibilities,
         viewerConfig.toSettings,
@@ -476,7 +474,7 @@ export const ImageExporter = (props: ImageExporterProps) => {
     });
   }, [
     dicomIndexList,
-    groups,
+    viewerChannelGroups,
     activeChannelGroupId,
     channelVisibilities,
     viewerConfig.toSettings,

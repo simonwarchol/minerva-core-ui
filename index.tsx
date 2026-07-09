@@ -1234,7 +1234,7 @@ const configWaypoints: LegacyExhibitWaypoint[] = [
 }));
 
 // TODO: remove legacy exhibit data structure
-const exhibit_config = {
+const crcExhibitConfig = {
   Name: "Multiplexed 3D atlas of state transitions and immune interactions in colorectal cancer",
   Stories: [
     {
@@ -1481,7 +1481,7 @@ const exhibit_config = {
     },
   ],
 };
-const jpeg_exhibit_config = {
+const jpegExhibitConfig = {
   Name: "JPEG demo",
   Stories: [
     {
@@ -1553,10 +1553,10 @@ const appRouter = createAppRouter(Main, {
       ? DEMO_JPEG_URL
       : DEMO_CRC_OME_TIFF_URL
     : undefined,
-  exhibit_config: ENABLE_DEMO_CONTENT
+  exhibitConfig: ENABLE_DEMO_CONTENT
     ? ENABLE_JPEG_DEMO
-      ? jpeg_exhibit_config
-      : exhibit_config
+      ? jpegExhibitConfig
+      : crcExhibitConfig
     : emptyExhibitConfig,
   configWaypoints:
     ENABLE_DEMO_CONTENT && !ENABLE_JPEG_DEMO ? configWaypoints : [],

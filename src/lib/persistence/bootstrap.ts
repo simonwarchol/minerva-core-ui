@@ -12,7 +12,7 @@ let inflight: Promise<void> | null = null;
 /** Stable id so `pnpm run demo` always has one spine on the library shelf. */
 const DEMO_SHELF_STORY_ID = "018fd3a0-0000-7000-8000-00000000de11";
 
-/** Mirrors `exhibit_config.Name` in `index.tsx` for the CRC demo build. */
+/** Mirrors `exhibitConfig.Name` in `index.tsx` for the CRC demo build. */
 const DEMO_SHELF_TITLE =
   "Multiplexed 3D atlas of state transitions and immune interactions in colorectal cancer";
 

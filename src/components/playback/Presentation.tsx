@@ -193,7 +193,6 @@ const Toolbar = styled.div`
   > .right {
     grid-column: 5;
   }
-  }
 `;
 
 const ContentWrap = styled.div`

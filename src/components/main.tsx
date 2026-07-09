@@ -23,6 +23,7 @@ import type {
   ConfigWaypoint,
 } from "@/lib/authoring/config";
 import { extractChannels, extractDistributions } from "@/lib/authoring/config";
+import { buildViewerChannelGroups } from "@/lib/channel/viewerChannelGroups";
 import {
   createTileLayers,
   loadDicomWeb,
@@ -64,7 +65,6 @@ import {
   documentShapes,
   documentSourceChannels,
   documentWaypoints,
-  findSourceChannel,
   flattenImageChannelsInDocumentOrder,
   useDocumentStore,
 } from "@/lib/stores/documentStore";
@@ -90,7 +90,7 @@ import {
 type Props = {
   /** Seed stories; may include legacy `Arrows` / `Overlays` until the image loads and migration runs. */
   configWaypoints: LegacyExhibitWaypoint[];
-  exhibit_config: ExhibitConfig;
+  exhibitConfig: ExhibitConfig;
   /**
    * When set, auto-loads this remote OME-TIFF on mount (and `hasDemo` loading state).
    * Omit for `pnpm run dev` — pass only from `pnpm run demo` in `index.tsx`.
@@ -126,19 +126,6 @@ const Full = styled.div`
   min-height: 0;
   max-height: 100vh;
   overflow: hidden;
-`;
-
-const Scrollable = styled.div`
-  z-index: 2;
-  grid-column: 2;
-  grid-row: 1 / -1;
-  overflow-y: scroll;
-  border-radius: 12px;
-  outline: 1px solid var(--theme-glass-edge);
-  background-color: var(--dark-main-glass);
-  font-size: 20px;
-  padding: 5vh;
-  margin: 5vh;
 `;
 
 const RetrievingWrapper = styled.div`
@@ -380,8 +367,7 @@ const Content = (props: Props) => {
       ),
     [handleKeys, activeStoryId],
   );
-  const firstExhibit = readConfig(props.exhibit_config);
-  const [exhibit] = useState(firstExhibit);
+  const seededExhibit = readConfig(props.exhibitConfig);
   const [jpegLoaderEntries, setJpegLoaderEntries] = useState<JpegLoaderEntry[]>(
     [],
   );
@@ -421,9 +407,7 @@ const Content = (props: Props) => {
   const [hiddenChannel, setHideChannel] = useState(() => !checkWindow());
 
   const handleResize = React.useCallback(() => {
-    if (!checkWindow()) {
-      setHideChannel(true);
-    }
+    setHideChannel(!checkWindow());
   }, [checkWindow]);
 
   React.useEffect(() => {
@@ -589,7 +573,7 @@ const Content = (props: Props) => {
     setDicomIndexList([]);
     setOmeLoaderEntries([]);
     // TODO
-    const relevant_groups = props.exhibit_config.Groups;
+    const relevant_groups = props.exhibitConfig.Groups;
     const sourceImageId = crypto.randomUUID();
     const imageHeight = 4096; //TODO
     const imageWidth = 4096; //TODO
@@ -599,6 +583,7 @@ const Content = (props: Props) => {
       imageHeight,
       imageWidth,
     });
+    if (loadGeneration !== jpegUrlLoadGenerationRef.current) return;
     const { SourceChannels, ChannelGroups } = extractChannels(
       loader,
       "Colorimetric",
@@ -616,6 +601,7 @@ const Content = (props: Props) => {
     setChannelGroups(ChannelGroups);
     selectFirstChannelGroup(ChannelGroups);
     ensureDefaultWaypointForImageImport();
+    if (loadGeneration !== jpegUrlLoadGenerationRef.current) return;
     setJpegLoaderEntries([{ loader, sourceImageId }]);
   };
 
@@ -631,7 +617,7 @@ const Content = (props: Props) => {
     // index.tsx CRC templates are for the bundled demo image only, not arbitrary URLs.
     const relevant_groups =
       props.demo_url != null && url === props.demo_url
-        ? (props.exhibit_config.Groups ?? []).filter(
+        ? (props.exhibitConfig.Groups ?? []).filter(
             ({ Image }) => Image.Method === "Colorimetric",
           )
         : ([] as ConfigGroup[]);
@@ -722,7 +708,7 @@ const Content = (props: Props) => {
         const t1 = performance.now();
         await onStartDicomWeb(
           dicomPropList,
-          props.demo_dicom_web ? (props.exhibit_config.Groups ?? []) : [],
+          props.demo_dicom_web ? (props.exhibitConfig.Groups ?? []) : [],
         );
         console.log(
           `[minerva] onStartDicomWeb: ${(performance.now() - t1).toFixed(0)}ms`,
@@ -925,7 +911,7 @@ const Content = (props: Props) => {
     dicomIndexList.length === 0 &&
     !hasDemo;
 
-  const { name } = exhibit;
+  const { name } = seededExhibit;
 
   // Data transformation (from Index)
   const imageViewerStateSignature = React.useMemo(
@@ -933,36 +919,13 @@ const Content = (props: Props) => {
     [channelGroups, sourceChannels],
   );
 
-  const itemRegistryGroups = React.useMemo(() => {
+  const exhibitChannelGroupViews = React.useMemo(() => {
     const { channelGroups: G, sourceChannels: SC } =
       documentChannelsRef.current;
     if (buildImageViewerSignature(G, SC) !== imageViewerStateSignature) {
       throw new Error("minerva: document channel ref/signature mismatch");
     }
-    return G.map((group, g) => {
-      const { name, channels: groupChannelsList, expanded } = group;
-      const channels = groupChannelsList.map((group_channel) => {
-        const defaults = { name: "" };
-        const { r, g: gg, b } = group_channel.color;
-        const color = ((1 << 24) + (r << 16) + (gg << 8) + b)
-          .toString(16)
-          .slice(1);
-        const { lowerLimit, upperLimit } = group_channel;
-        const flat = findSourceChannel(SC, group_channel.channelId);
-        const { name: chName } = flat || defaults;
-        return {
-          color,
-          name: chName,
-          contrast: [lowerLimit, upperLimit] as [number, number],
-        };
-      });
-      return {
-        State: { Expanded: expanded ?? false },
-        g,
-        name,
-        channels,
-      };
-    });
+    return buildViewerChannelGroups(G, SC);
   }, [imageViewerStateSignature]);
 
   const viewerImageKey = React.useMemo(() => {
@@ -1049,7 +1012,7 @@ const Content = (props: Props) => {
     ioState,
     presenting,
     stopExport,
-    groups: itemRegistryGroups,
+    viewerChannelGroups: exhibitChannelGroupViews,
   };
 
   const viewerConfig = React.useMemo(() => {
@@ -1115,7 +1078,7 @@ const Content = (props: Props) => {
       toSettingsInternal(
         loader,
         modality,
-        itemRegistryGroups,
+        exhibitChannelGroupViews,
         activeChannelGroupId,
         channelVisibilities,
         viewerConfig.toSettings,
@@ -1124,7 +1087,7 @@ const Content = (props: Props) => {
     );
   }, [
     loaderList,
-    itemRegistryGroups,
+    exhibitChannelGroupViews,
     activeChannelGroupId,
     channelVisibilities,
     viewerConfig.toSettings,
@@ -1453,7 +1416,6 @@ const Content = (props: Props) => {
         const viewer = noLoader ? null : (
           <ImageViewer
             {...imageProps}
-            viewerConfig={viewerConfig}
             overlayLayers={overlayLayers}
             activeTool={activeTool}
             isDragging={dragState.isDragging}

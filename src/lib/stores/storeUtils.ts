@@ -511,7 +511,7 @@ export function waypointToConfigWaypoint(
   return out;
 }
 
-/** Map waypoints + authoring map → exhibit `ConfigWaypoint` list (`ItemRegistry.Stories`). */
+/** Map waypoints + authoring map → exhibit `ConfigWaypoint` list. */
 export function waypointsToConfigWaypoints(
   waypoints: Waypoint[],
   authoringMap: Map<string, AuthoringWaypointExtra>,
