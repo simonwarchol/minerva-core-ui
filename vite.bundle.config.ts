@@ -157,10 +157,13 @@ export default defineConfig({
       preserveEntrySignatures: "allow-extension",
       output: {
         exports: "named",
-        // Everything stays in minerva.js but kiln-render (~2 MB, with its
-        // codecs and trainer stub), imported on demand into its own chunks.
+        // Everything stays in minerva.js but kiln-render (~2 MB, with the
+        // module minerva loads it through and its trainer stub), imported on
+        // demand into its own chunks.
         manualChunks: (id) =>
-          /[\\/]kiln-render[\\/]|[\\/]cdnStubs[\\/]brushJs\.ts$/.test(id)
+          /[\\/]kiln-render[\\/]|[\\/]lib[\\/]volume[\\/]kiln\.ts$|[\\/]cdnStubs[\\/]brushJs\.ts$/.test(
+            id,
+          )
             ? undefined
             : "minerva",
         chunkFileNames: "assets/[name]-[hash].js",

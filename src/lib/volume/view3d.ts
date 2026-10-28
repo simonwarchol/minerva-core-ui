@@ -13,9 +13,12 @@ export function easeInOutCubic(t: number): number {
   return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
 }
 
-/** Render modes a waypoint can use, with their toolbar labels. */
+/**
+ * Render modes a waypoint can use, with their toolbar labels. Volume
+ * rendering is "Blend", as in Imaris.
+ */
 export const RENDER_MODE_LABELS: Record<View3d["renderMode"], string> = {
-  dvr: "Volume",
+  dvr: "Blend",
   mip: "MIP",
   iso: "Surface",
 };

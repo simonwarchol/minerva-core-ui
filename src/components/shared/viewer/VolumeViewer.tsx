@@ -9,8 +9,9 @@
  *   clip box, render mode and density to the waypoint's `view3d`;
  * - waypoint authoring reads the live view through `registerVolumeView` and
  *   thumbnails through `setSquareViewportThumbnailCapture`;
- * - when story export trained splats for the active channel group, they can
- *   be shown instead of the streamed volume (the player starts with them).
+ * - when story export trained splats for the active channel group (or the
+ *   group it recolours), they can be shown instead of the volume, whose
+ *   voxels then aren't loaded (the player starts with them).
  */
 import type {
   GaussianCloud,
@@ -31,6 +32,7 @@ import {
   type SplatLook,
   splatCloudsFor,
   splatKey,
+  splatsForGroup,
   splatsVersion,
   subscribeSplats,
 } from "@/lib/volume/splatCache";
@@ -89,7 +91,27 @@ type Status = "loading" | "ready" | { error: string };
 type Live = {
   viewer: KilnViewer;
   provider: ImarisDataProvider;
+  /** Lets the volume's voxels load (see {@link holdBricks}). */
+  releaseBricks: () => void;
 };
+
+/**
+ * Holds the provider's brick reads until the returned function is called: a
+ * viewer opened to show splats reads the volume's metadata alone (the
+ * provider starts its workers and downloads on the first brick read).
+ */
+function holdBricks(provider: ImarisDataProvider): () => void {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const loadBrick = provider.loadBrick.bind(provider);
+  provider.loadBrick = async (...args) => {
+    await held;
+    return loadBrick(...args);
+  };
+  return release;
+}
 
 function readView(v: KilnViewer): View3d {
   const r = v.renderer;
@@ -119,6 +141,11 @@ function withoutCamera({ camera: _camera, ...settings }: View3d) {
   return settings;
 }
 
+/** Channel colour alpha: the layer's opacity in Blend (MIP would dim by it). */
+function channelAlpha(viewer: KilnViewer, layer: VolumeChannelLayer): number {
+  return viewer.renderer.volumeRenderMode === "dvr" ? layer.opacity : 1;
+}
+
 function applyChannels(live: Live, layers: VolumeChannelLayer[]): void {
   const { viewer, provider } = live;
   provider.activeChannels.forEach((source, slot) => {
@@ -130,7 +157,13 @@ function applyChannels(live: Live, layers: VolumeChannelLayer[]): void {
       return;
     }
     const [r, g, b] = layer.color;
-    viewer.renderer.setChannelColor(slot, r / 255, g / 255, b / 255, 1);
+    viewer.renderer.setChannelColor(
+      slot,
+      r / 255,
+      g / 255,
+      b / 255,
+      channelAlpha(viewer, layer),
+    );
     const w = limitsToWindow(layer.limits, info.range);
     viewer.renderer.setChannelWindow(slot, w.center, w.width);
     viewer.streamingManager.setChannelEnabled(slot, true);
@@ -236,6 +269,8 @@ export const VolumeViewer = React.memo(function VolumeViewer({
   /** Level a viewer opens at: splats need only the coarsest. */
   const openLodRef = React.useRef<number | null>(null);
   openLodRef.current = display === "splats" ? COARSEST_LOD : detail;
+  const displayRef = React.useRef(display);
+  displayRef.current = display;
 
   const images = useDocumentStore((s) => s.images);
   const channelGroups = useDocumentStore((s) => s.channelGroups);
@@ -283,6 +318,12 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     const live = liveRef.current;
     if (live) applyChannels(live, layers);
   }, [layers, loadSet]);
+  // Channel opacity applies in Blend only.
+  React.useEffect(() => {
+    void settings.renderMode; // re-apply when the mode changes
+    const live = liveRef.current;
+    if (status === "ready" && live) applyChannels(live, layersRef.current);
+  }, [status, settings.renderMode]);
 
   React.useEffect(() => {
     const canvas = canvasRef.current;
@@ -302,6 +343,9 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         const provider = new ImarisDataProvider(url, {
           channels: loadSet,
         });
+        // Splats first: no voxels until the volume shows.
+        const releaseBricks = holdBricks(provider);
+        if (displayRef.current !== "splats") releaseBricks();
         const start = viewRef.current;
         const viewer = await KilnViewer.create(canvas, provider, {
           ...(start ? { cam: start.camera } : {}),
@@ -312,11 +356,12 @@ export const VolumeViewer = React.memo(function VolumeViewer({
           viewer.dispose();
           return;
         }
-        const live = { viewer, provider };
+        const live = { viewer, provider, releaseBricks };
         liveRef.current = live;
-        applyChannels(live, layersRef.current);
         if (start) writeView(viewer, start);
         else writeView(viewer, { ...readView(viewer), ...DEFAULT_SETTINGS });
+        // After the mode: channel opacity depends on it.
+        applyChannels(live, layersRef.current);
         setSettings(withoutCamera(readView(viewer)));
         setStatus("ready");
       } catch (e) {
@@ -338,13 +383,20 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     };
   }, [url, loadSet, attempt]);
 
-  // Thumbnails wait for this, as for 2D image layers: the coarsest level.
+  // Thumbnails wait for this, as for 2D image layers: the coarsest level, or
+  // splats on screen.
   React.useEffect(() => {
     const live = status === "ready" ? liveRef.current : null;
     if (!live) return;
     const poll = window.setInterval(() => {
       if (liveRef.current !== live) return;
-      if (!live.viewer.streamingManager.baseLodLoaded) return;
+      const { viewer } = live;
+      if (
+        !viewer.streamingManager.baseLodLoaded &&
+        viewer.displayMode !== "splats"
+      ) {
+        return;
+      }
       window.clearInterval(poll);
       const app = useAppStore.getState();
       const index = app.activeStoryIndex;
@@ -363,7 +415,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
   }, [status, canEdit]);
 
   const splatsRev = React.useSyncExternalStore(subscribeSplats, splatsVersion);
-  const look = React.useMemo<SplatLook | null>(
+  const groupLook = React.useMemo<SplatLook | null>(
     () =>
       activeChannelGroupId
         ? {
@@ -374,6 +426,11 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         : null,
     [activeChannelGroupId, settings.renderMode, settings.density],
   );
+  // A recoloured copy of a group shows that group's splats in its colours.
+  const { look, original: recoloredFrom } = React.useMemo(() => {
+    void splatsRev; // a cloud was trained
+    return splatsForGroup(image, groupLook, channelGroups);
+  }, [image, groupLook, channelGroups, splatsRev]);
   // Splats are of the whole volume: a clipped view shows the live volume.
   const clipped = isClipped(settings);
   const splatsAvailable = React.useMemo(() => {
@@ -381,6 +438,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     return !clipped && hasSplatsFor(image, look);
   }, [image, look, splatsRev, clipped]);
   const showSplats = display === "splats" && splatsAvailable;
+  const showOnlyChannelGroup = useAppStore((s) => s.showOnlyChannelGroup);
 
   // Volume vs splats: splats need only the coarsest level streamed.
   React.useEffect(() => {
@@ -466,6 +524,12 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     };
   }, [status, splatSource, documentUrl]);
 
+  // Voxels load once the volume shows (or the splats can't).
+  React.useEffect(() => {
+    if (status !== "ready") return;
+    if (!showSplats || splatState === "error") liveRef.current?.releaseBricks();
+  }, [status, showSplats, splatState]);
+
   React.useEffect(
     () =>
       registerVolumeView({
@@ -491,6 +555,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
                 return;
               }
               const live = liveRef.current;
+              live?.releaseBricks(); // training reads the volume
               const shown = live?.provider.activeChannels ?? [];
               const covered = layersRef.current.every((l) =>
                 shown.includes(l.sourceIndex),
@@ -511,6 +576,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         trainSplats: async (opts) => {
           const live = liveRef.current;
           if (!live) throw new Error("The volume is not open.");
+          live.releaseBricks();
           cancelAnimationFrame(flightRef.current);
           const cloud = await live.viewer.generateSplats({
             train: true,
@@ -591,7 +657,15 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     update({ clipMin, clipMax });
   };
 
-  const openViewer = status === "ready" ? liveRef.current?.viewer : undefined;
+  const openLive = status === "ready" ? liveRef.current : null;
+  const openViewer = openLive?.viewer;
+  // Blend opacity of group channels (one channel renders through its
+  // transfer function instead); splats follow it live.
+  const opacityLayers =
+    settings.renderMode === "dvr" &&
+    (openLive?.provider.activeChannels.length ?? 0) > 1
+      ? layers.filter((l) => l.rowId !== null)
+      : [];
   return (
     <div className={styles.root}>
       <canvas ref={canvasRef} className={styles.canvas} />
@@ -617,36 +691,44 @@ export const VolumeViewer = React.memo(function VolumeViewer({
           splatState={splatState}
           splatsAvailable={splatsAvailable}
           onDisplay={setDisplay}
+          recoloredFrom={recoloredFrom?.name ?? null}
+          onResetColors={() => {
+            if (!recoloredFrom) return;
+            showOnlyChannelGroup(recoloredFrom.id);
+            setDisplay("splats");
+          }}
           detail={detail}
           onDetail={setDetail}
         />
       ) : null}
-      {canEdit && openViewer && !showSplats ? (
+      {canEdit && openLive && (!showSplats || opacityLayers.length > 0) ? (
         <div
           className={styles.toolbar}
           role="toolbar"
           aria-label="3D view settings"
         >
-          <div className={styles.group}>
-            {(
-              Object.entries(RENDER_MODE_LABELS) as [
-                View3d["renderMode"],
-                string,
-              ][]
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                className={styles.chip}
-                aria-pressed={settings.renderMode === mode}
-                onClick={() => update({ renderMode: mode })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {showSplats ? null : (
+            <div className={styles.group}>
+              {(
+                Object.entries(RENDER_MODE_LABELS) as [
+                  View3d["renderMode"],
+                  string,
+                ][]
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={styles.chip}
+                  aria-pressed={settings.renderMode === mode}
+                  onClick={() => update({ renderMode: mode })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Density is volume rendering's absorption; MIP and Surface ignore it. */}
-          {settings.renderMode === "dvr" ? (
+          {settings.renderMode === "dvr" && !showSplats ? (
             <label className={styles.group}>
               <span className={styles.prefix}>Density</span>
               <input
@@ -662,68 +744,175 @@ export const VolumeViewer = React.memo(function VolumeViewer({
               />
             </label>
           ) : null}
-          <label className={styles.group}>
-            <span className={styles.prefix}>Depth</span>
-            <input
-              type="range"
-              aria-label="Depth fade"
-              title="Dim with distance from the camera"
-              min={0}
-              max={1}
-              step={0.01}
-              value={settings.depthCue}
-              onChange={(e) =>
-                update({ depthCue: Number(e.currentTarget.value) })
-              }
+          {opacityLayers.length > 0 ? (
+            <ChannelOpacity
+              live={openLive}
+              layers={opacityLayers}
+              channels={image.channels}
             />
-          </label>
-          <div className={styles.group}>
-            <span className={styles.prefix}>Clip</span>
-            {AXES.map((axis, i) => (
-              <span key={axis} className={styles.clipAxis}>
-                <span className={styles.axis}>{axis}</span>
+          ) : null}
+          {showSplats ? null : (
+            <>
+              <label className={styles.group}>
+                <span className={styles.prefix}>Depth</span>
                 <input
                   type="range"
-                  aria-label={`Clip ${axis} start`}
+                  aria-label="Depth fade"
+                  title="Dim with distance from the camera"
                   min={0}
                   max={1}
                   step={0.01}
-                  value={settings.clipMin[i]}
+                  value={settings.depthCue}
                   onChange={(e) =>
-                    setClip(i, "min", Number(e.currentTarget.value))
+                    update({ depthCue: Number(e.currentTarget.value) })
                   }
                 />
-                <input
-                  type="range"
-                  aria-label={`Clip ${axis} end`}
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={settings.clipMax[i]}
-                  onChange={(e) =>
-                    setClip(i, "max", Number(e.currentTarget.value))
+              </label>
+              <div className={styles.group}>
+                <span className={styles.prefix}>Clip</span>
+                {AXES.map((axis, i) => (
+                  <span key={axis} className={styles.clipAxis}>
+                    <span className={styles.axis}>{axis}</span>
+                    <input
+                      type="range"
+                      aria-label={`Clip ${axis} start`}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={settings.clipMin[i]}
+                      onChange={(e) =>
+                        setClip(i, "min", Number(e.currentTarget.value))
+                      }
+                    />
+                    <input
+                      type="range"
+                      aria-label={`Clip ${axis} end`}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={settings.clipMax[i]}
+                      onChange={(e) =>
+                        setClip(i, "max", Number(e.currentTarget.value))
+                      }
+                    />
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className={styles.chip}
+                  onClick={() =>
+                    update({
+                      clipMin: [0, 0, 0],
+                      clipMax: [1, 1, 1],
+                    })
                   }
-                />
-              </span>
-            ))}
-            <button
-              type="button"
-              className={styles.chip}
-              onClick={() =>
-                update({
-                  clipMin: [0, 0, 0],
-                  clipMax: [1, 1, 1],
-                })
-              }
-            >
-              Reset
-            </button>
-          </div>
+                >
+                  Reset
+                </button>
+              </div>
+            </>
+          )}
         </div>
       ) : null}
     </div>
   );
 });
+
+/** A channel group row's Blend opacity, written to the document. */
+function setRowOpacity(rowId: string, opacity: number): void {
+  const doc = useDocumentStore.getState();
+  doc.setChannelGroups(
+    doc.channelGroups.map((g) =>
+      g.channels.some((c) => c.id === rowId)
+        ? {
+            ...g,
+            channels: g.channels.map((c) =>
+              c.id === rowId ? { ...c, opacity } : c,
+            ),
+          }
+        : g,
+    ),
+  );
+}
+
+/**
+ * Blend opacity of each shown group channel. Dragging previews on the
+ * viewer; the channel group takes the value on release (one undo step).
+ */
+function ChannelOpacity({
+  live,
+  layers,
+  channels,
+}: {
+  live: Live;
+  layers: VolumeChannelLayer[];
+  channels: Image["channels"];
+}) {
+  const [draft, setDraft] = React.useState<{
+    rowId: string;
+    value: number;
+  } | null>(null);
+  const draftRef = React.useRef(draft);
+  const preview = (layer: VolumeChannelLayer, value: number) => {
+    if (!layer.rowId) return;
+    draftRef.current = { rowId: layer.rowId, value };
+    setDraft(draftRef.current);
+    const slot = live.provider.activeChannels.indexOf(layer.sourceIndex);
+    const [r, g, b] = layer.color;
+    if (slot >= 0) {
+      live.viewer.renderer.setChannelColor(
+        slot,
+        r / 255,
+        g / 255,
+        b / 255,
+        value,
+      );
+    }
+  };
+  const commit = () => {
+    const d = draftRef.current;
+    if (!d) return;
+    draftRef.current = null;
+    setDraft(null);
+    setRowOpacity(d.rowId, d.value);
+  };
+  return (
+    <div className={styles.group}>
+      <span className={styles.prefix}>Opacity</span>
+      {layers.map((layer) => {
+        const name =
+          channels.find((c) => c.id === layer.channelId)?.name ?? "Channel";
+        const value =
+          draft && draft.rowId === layer.rowId ? draft.value : layer.opacity;
+        return (
+          <span
+            key={layer.rowId}
+            className={styles.channelOpacity}
+            title={`${name}: ${Math.round(value * 100)}%`}
+          >
+            <span
+              className={styles.swatch}
+              style={{ background: `rgb(${layer.color.join(",")})` }}
+              aria-hidden
+            />
+            <input
+              type="range"
+              aria-label={`${name} opacity`}
+              min={0}
+              max={1}
+              step={0.01}
+              value={value}
+              onChange={(e) => preview(layer, Number(e.currentTarget.value))}
+              onPointerUp={commit}
+              onKeyUp={commit}
+              onBlur={commit}
+            />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 type Streaming = {
   /** Bricks wanted for this view that are not resident yet. */
@@ -737,8 +926,8 @@ type Streaming = {
 
 /**
  * Viewing preferences (not saved in waypoints): loading progress, volume or
- * splats, data detail. Polls streaming progress while the volume is shown;
- * only this panel re-renders with it.
+ * splats, back to a group's trained colors, data detail. Polls streaming
+ * progress while the volume is shown; only this panel re-renders with it.
  */
 function ViewPanel({
   viewer,
@@ -746,6 +935,8 @@ function ViewPanel({
   splatState,
   splatsAvailable,
   onDisplay,
+  recoloredFrom,
+  onResetColors,
   detail,
   onDetail,
 }: {
@@ -754,6 +945,9 @@ function ViewPanel({
   splatState: "idle" | "loading" | "error";
   splatsAvailable: boolean;
   onDisplay: (display: "volume" | "splats") => void;
+  /** Group with splats the shown one recolours (null when it doesn't). */
+  recoloredFrom: string | null;
+  onResetColors: () => void;
   detail: number | null;
   onDetail: (lod: number | null) => void;
 }) {
@@ -825,6 +1019,20 @@ function ViewPanel({
             Splats
           </button>
         </div>
+      ) : null}
+      {recoloredFrom !== null ? (
+        <button
+          type="button"
+          className={styles.chip}
+          title={
+            splatsAvailable
+              ? `Back to the colors of “${recoloredFrom}”`
+              : `These splats keep their trained colors: back to “${recoloredFrom}” to show them`
+          }
+          onClick={onResetColors}
+        >
+          Reset colors
+        </button>
       ) : null}
       {!showSplats && streaming ? (
         <DetailControl

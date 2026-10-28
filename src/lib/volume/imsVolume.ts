@@ -10,7 +10,7 @@ import { useDocumentStore } from "@/lib/stores/documentStore";
 import { MAX_VOLUME_CHANNELS } from "./volumeChannels";
 
 /** kiln-render is ~2 MB; only stories with a volume load it. */
-export const loadKiln = () => import("kiln-render");
+export const loadKiln = () => import("./kiln");
 
 /** `.ims` path (query / hash ignored). */
 export function looksLikeImsUrl(url: string): boolean {

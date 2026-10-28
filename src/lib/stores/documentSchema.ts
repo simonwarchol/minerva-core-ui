@@ -251,6 +251,11 @@ export const ChannelGroupChannelSchema = z.object({
   upperLimit: z.number(),
   /** When {@link ImageChannelSchema.kind} is `mask`, fill + color mode. */
   maskVisualization: MaskVisualizationSchema.optional(),
+  /**
+   * 3D Blend rendering: the channel's opacity, scaling how much it absorbs
+   * and emits (0–1, default 1). The 2D viewer and other 3D modes ignore it.
+   */
+  opacity: z.number().min(0).max(1).optional(),
 });
 
 export const ChannelGroupSchema = z.object({

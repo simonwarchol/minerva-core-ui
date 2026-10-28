@@ -24,6 +24,14 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/lib/volume/imaris/**", "src/lib/volume/splats/**"],
+      "linter": {
+        "rules": { "style": { "noNonNullAssertion": "off" } }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double"

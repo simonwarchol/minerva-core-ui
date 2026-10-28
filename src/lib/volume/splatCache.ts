@@ -230,6 +230,53 @@ export function hasSplatsFor(image: Image, look: SplatLook | null): boolean {
   );
 }
 
+/** Same channels and contrast: groups differing in colour or opacity alone. */
+function sameButTint(a: ChannelGroup, b: ChannelGroup): boolean {
+  const key = (g: ChannelGroup) =>
+    g.channels
+      .map((c) => `${c.channelId}:${c.lowerLimit}:${c.upperLimit}`)
+      .sort()
+      .join("|");
+  return key(a) === key(b);
+}
+
+/** Per-channel clouds, which take the live channel colours. */
+function recolorable(image: Image, look: SplatLook): boolean {
+  const local = trained.get(splatKey(look));
+  if (local) return local.every((p) => p.channelId !== null);
+  const entries = documentSplatsFor(image, look);
+  return entries.length > 0 && entries.every((e) => e.channelId !== undefined);
+}
+
+/**
+ * Splats for the active group's look. A group without its own can be a
+ * recoloured copy of one with them (the player's legend recolours a copy of
+ * the shown group): per-channel clouds show it in its colours, while
+ * whole-group clouds have theirs baked in and leave it to the volume.
+ * `original` is that group, to reset the colours to.
+ */
+export function splatsForGroup(
+  image: Image,
+  look: SplatLook | null,
+  groups: ChannelGroup[],
+): { look: SplatLook | null; original: ChannelGroup | null } {
+  const active = look && groups.find((g) => g.id === look.groupId);
+  if (!look || !active || hasSplatsFor(image, look)) {
+    return { look, original: null };
+  }
+  const candidates = groups.filter(
+    (g) =>
+      g.id !== active.id &&
+      sameButTint(g, active) &&
+      hasSplatsFor(image, { ...look, groupId: g.id }),
+  );
+  const original =
+    candidates.find((g) => active.name === `${g.name} copy`) ?? candidates[0];
+  if (!original) return { look, original: null };
+  const theirs = { ...look, groupId: original.id };
+  return { look: recolorable(image, theirs) ? theirs : look, original };
+}
+
 /**
  * The look's clouds: trained this session, else the document's PLYs
  * (`url` resolved against `documentUrl`). Null when there are none.

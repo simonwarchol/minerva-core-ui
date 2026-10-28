@@ -26,6 +26,10 @@ export type VolumeChannelLayer = {
   color: [number, number, number];
   /** Contrast limits in raw file units. */
   limits: [number, number];
+  /** Blend opacity (0–1). */
+  opacity: number;
+  /** Group row it comes from (null: shown outside any group). */
+  rowId: string | null;
 };
 
 type VolumeChannelInputs = {
@@ -100,7 +104,14 @@ export function volumeChannelLayers(
         color = [channelRendering.r, channelRendering.g, channelRendering.b];
       }
     }
-    return { channelId: sc.id, sourceIndex: sc.index, color, limits };
+    return {
+      channelId: sc.id,
+      sourceIndex: sc.index,
+      color,
+      limits,
+      opacity: gc?.opacity ?? 1,
+      rowId: gc?.id ?? null,
+    };
   });
 }
 

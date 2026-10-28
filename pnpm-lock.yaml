@@ -149,6 +149,9 @@ importers:
       browser-fs-access:
         specifier: ^0.38.0
         version: 0.38.0
+      brush-js:
+        specifier: link:../kiln-render/vendor/brush-js
+        version: link:../kiln-render/vendor/brush-js
       dcmjs:
         specifier: ^0.41.0
         version: 0.41.0
@@ -165,8 +168,11 @@ importers:
         specifier: ^6.2.1
         version: 6.2.2
       kiln-render:
-        specifier: github:simonwarchol/kiln-render#c797c341dbab7b288ff5b5b7e28e997acb7d9707
-        version: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/c797c341dbab7b288ff5b5b7e28e997acb7d9707
+        specifier: github:simonwarchol/kiln-render#eec425a917b62a04d90358488b00258dd2084929
+        version: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/eec425a917b62a04d90358488b00258dd2084929
+      kiln-upstream:
+        specifier: file:vendor/kiln/kiln-render-upstream-edd7620.tgz
+        version: kiln-render@file:vendor/kiln/kiln-render-upstream-edd7620.tgz
       lefthook:
         specifier: ^2.1.1
         version: 2.1.1
@@ -206,6 +212,9 @@ importers:
       vite-plugin-svgr:
         specifier: ^4.3.0
         version: 4.5.0(rollup@4.41.1)(typescript@6.0.3)(vite@5.4.19(@types/node@20.17.57))
+      wgpu-matrix:
+        specifier: ^3.4.2
+        version: 3.4.2
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -2782,8 +2791,12 @@ packages:
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
 
-  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/c797c341dbab7b288ff5b5b7e28e997acb7d9707:
-    resolution: {gitHosted: true, integrity: sha512-n3vnrPC/fTt53XxAJSerLPcWNSkWXy9W6Z61VEHFi5PrDia/+M7WV8vd9lxdjGo1WdRRmx/X4rkLqlH+u19CqA==, tarball: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/c797c341dbab7b288ff5b5b7e28e997acb7d9707}
+  kiln-render@file:vendor/kiln/kiln-render-upstream-edd7620.tgz:
+    resolution: {integrity: sha512-2RCgs/gBHEcKAS9FE4oM028IgKl/A5OcTmN4oCVuQlfX4xxBTs1S7yMAyzBEisCSVyxk0m0MhhD3chXNkcffSg==, tarball: file:vendor/kiln/kiln-render-upstream-edd7620.tgz}
+    version: 0.5.0
+
+  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/eec425a917b62a04d90358488b00258dd2084929:
+    resolution: {gitHosted: true, integrity: sha512-QeKaPHv1s2gELwPddZJcr6dnEzjveTtcNWZpm2NM1aJMPSKsqUYU2Z9TfFtNwF61h06RultmTVRN0IMoCdMvww==, tarball: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/eec425a917b62a04d90358488b00258dd2084929}
     version: 0.4.1
 
   ktx-parse@0.7.1:
@@ -3939,6 +3952,9 @@ packages:
 
   web-worker@1.5.0:
     resolution: {integrity: sha512-RiMReJrTAiA+mBjGONMnjVDP2u3p9R1vkcGz6gDIrOMT3oGuYwX2WRMYI9ipkphSuE5XKEhydbhNEJh4NY9mlw==}
+
+  wgpu-matrix@3.4.2:
+    resolution: {integrity: sha512-IfZFbG7olEYBD76VCZy2TzqM57GKy3LT++AZh37tMHPPByO6R2h61zXGBZFNPi2IzxNivNi8y5dvze5PjaczjA==}
 
   whatwg-encoding@2.0.0:
     resolution: {integrity: sha512-p41ogyeMUrw3jWclHWTQg1k05DSVXPLcVxRTYsXUk+ZooOCZLcoYgPZ/HL/D/N+uQPOtcp1me1WhBEaX02mhWg==}
@@ -6952,7 +6968,11 @@ snapshots:
     dependencies:
       json-buffer: 3.0.1
 
-  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/c797c341dbab7b288ff5b5b7e28e997acb7d9707:
+  kiln-render@file:vendor/kiln/kiln-render-upstream-edd7620.tgz:
+    dependencies:
+      '@webgpu/types': 0.1.69
+
+  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/eec425a917b62a04d90358488b00258dd2084929:
     dependencies:
       '@webgpu/types': 0.1.69
 
@@ -8530,6 +8550,8 @@ snapshots:
   web-namespaces@2.0.1: {}
 
   web-worker@1.5.0: {}
+
+  wgpu-matrix@3.4.2: {}
 
   whatwg-encoding@2.0.0:
     dependencies:

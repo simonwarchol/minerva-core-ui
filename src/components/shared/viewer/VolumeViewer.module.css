@@ -81,6 +81,22 @@
   accent-color: var(--minerva-blue);
 }
 
+.channelOpacity {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.channelOpacity input[type="range"] {
+  width: 48px;
+}
+
+.swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+}
+
 /* Viewing preferences (not saved in waypoints): loading, display, detail. */
 .viewPanel {
   position: absolute;

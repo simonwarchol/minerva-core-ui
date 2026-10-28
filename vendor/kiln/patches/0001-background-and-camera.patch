@@ -1,0 +1,118 @@
+diff --git a/src/core/renderer.ts b/src/core/renderer.ts
+index 707bf17..9d2fb73 100644
+--- a/src/core/renderer.ts
++++ b/src/core/renderer.ts
+@@ -77,6 +77,10 @@ export class Renderer {
+   // Show axis helper
+   showAxis = false;
+ 
++  // Premultiplied RGBA the volume is composited over. Alpha 0 renders the volume with its own
++  // alpha (e.g. offscreen captures into an rgba16float target)
++  background = new Float32Array([0.05, 0.05, 0.05, 1]);
++
+   // Jitter: randomize ray start position per frame to dither brick seams
+   enableJitter = true;
+ 
+@@ -957,6 +961,7 @@ export class Renderer {
+     const pick = !this.isSliceMode && !this.pickBusy && this.pickBindGroup ? this.pickPending : null;
+     d[o.pickPixel / 4] = pick ? Math.floor(pick.x * this.active.width / this.screenWidth) : -1;
+     d[o.pickPixel / 4 + 1] = pick ? Math.floor(pick.y * this.active.height / this.screenHeight) : -1;
++    d.set(this.background, o.background / 4);
+     this.device.queue.writeBuffer(this.computeUniformBuffer, 0, d as Float32Array<ArrayBuffer>);
+ 
+     const encoder = this.device.createCommandEncoder();
+diff --git a/src/index.ts b/src/index.ts
+index 8d07eb2..af76989 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -25,6 +25,9 @@ export { MAX_LABEL_LAYERS } from './shaders/uniform-layout.js';
+ export type { VolumeRenderMode } from './core/renderer.js';
+ export type { TFPreset, OpacityPoint } from './core/transfer-function.js';
+ export type { Projection, UpAxis } from './core/camera.js';
++// The camera class: offscreen engines (splat training views) use their own
++export { Camera } from './core/camera.js';
++export type { Renderer } from './core/renderer.js';
+ 
+ // Data provider interface (implement this to support custom formats)
+ export type {
+diff --git a/src/shaders/index.ts b/src/shaders/index.ts
+index 2fbcfd7..786e736 100644
+--- a/src/shaders/index.ts
++++ b/src/shaders/index.ts
+@@ -163,10 +163,10 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
+     let halfSize = uniforms.normalizedSize * 0.5;
+     let hit = intersectBox(rayOrigin, rayDir, -halfSize, halfSize);
+ 
+-    let bgColor = vec3f(0.05, 0.05, 0.05);
++    let bg = uniforms.background;
+ 
+     if (hit.x > hit.y || hit.y <= 0.0) {
+-        textureStore(outputTexture, pixelCoord, vec4f(bgColor, 1.0));
++        textureStore(outputTexture, pixelCoord, bg);
+         return;
+     }
+ 
+@@ -177,15 +177,14 @@ fn main(@builtin(global_invocation_id) globalId: vec3u) {
+     );
+ 
+     if (clipped.x > clipped.y) {
+-        textureStore(outputTexture, pixelCoord, vec4f(bgColor, 1.0));
++        textureStore(outputTexture, pixelCoord, bg);
+         return;
+     }
+ 
+     let useIndirection = uniforms.useIndirection > 0.5;
+     let result = rayMarchMode(rayOrigin, rayDir, clipped.x, clipped.y, uniforms.normalizedSize, uniforms.datasetSize, uniforms.renderMode, uniforms.isoValue, useIndirection);
+ 
+-    let finalColor = result.rgb + bgColor * (1.0 - result.a);
+-    textureStore(outputTexture, pixelCoord, vec4f(finalColor, 1.0));
++    textureStore(outputTexture, pixelCoord, result + bg * (1.0 - result.a));
+ }
+ `;
+ }
+diff --git a/src/shaders/uniform-layout.ts b/src/shaders/uniform-layout.ts
+index 51b1157..1b4e357 100644
+--- a/src/shaders/uniform-layout.ts
++++ b/src/shaders/uniform-layout.ts
+@@ -96,6 +96,8 @@ export const COMPUTE_UNIFORMS = defineUniformStruct([
+   { name: 'orthographic',    type: 'u32' },
+   // Pixel whose first label hit is recorded for picking; negative: none
+   { name: 'pickPixel',       type: 'vec2f' },
++  // Premultiplied RGBA the volume is composited over; alpha 0 keeps the volume's own alpha
++  { name: 'background',      type: 'vec4f' },
+ ]);
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/test/ray-feedback-render-loop.test.ts b/test/ray-feedback-render-loop.test.ts
+index 8893b0a..99220c3 100644
+--- a/test/ray-feedback-render-loop.test.ts
++++ b/test/ray-feedback-render-loop.test.ts
+@@ -75,6 +75,7 @@ function harness({ taa = false, enabled = true } = {}) {
+     accumScratch: new Float32Array(4), computePipeline: volumePipeline, frameIndex: 0,
+     clipMin: [0, 0, 0], clipMax: [1, 1, 1],
+     channelColors: new Float32Array(16), channelWindowCenter: new Float32Array(4), channelWindowWidth: new Float32Array(4),
++    background: new Float32Array([0.05, 0.05, 0.05, 1]),
+     rayReadback: enabled ? staging : null, rayReadbackBusy: false, rayFramesPending: 0,
+     labels: { version: 0 }, labelVersion: 0, pickPending: null, lastCameraPos: new Float32Array(3),
+     onRayVisibility: vi.fn((value: Uint32Array, frames: number) => manager.reportRayVisibility(value, frames)),
+diff --git a/test/uniform-layout.test.ts b/test/uniform-layout.test.ts
+index 58ff8ca..f15f5a9 100644
+--- a/test/uniform-layout.test.ts
++++ b/test/uniform-layout.test.ts
+@@ -12,7 +12,7 @@ import { COMPUTE_UNIFORMS, LABEL_UNIFORMS, SLICE_UNIFORMS } from '../src/shaders
+ 
+ describe('COMPUTE_UNIFORMS layout', () => {
+   it('has the expected total size (multiple of 16)', () => {
+-    expect(COMPUTE_UNIFORMS.size).toBe(496);
++    expect(COMPUTE_UNIFORMS.size).toBe(512);
+     expect(COMPUTE_UNIFORMS.size % 16).toBe(0);
+   });
+ 
+@@ -32,6 +32,7 @@ describe('COMPUTE_UNIFORMS layout', () => {
+       gradientOpacity: 468,
+       orthographic: 472,
+       pickPixel: 480,
++      background: 496,
+     });
+   });
+ 
