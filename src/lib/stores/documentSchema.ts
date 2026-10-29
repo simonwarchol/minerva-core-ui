@@ -184,6 +184,8 @@ export const VolumeSplatsSchema = z.object({
   count: z.number().int().positive(),
   /** Held-out PSNR (dB) of the splats against the volume render. */
   psnr: z.number().optional(),
+  /** PSNR (dB) against the volume render at the story's waypoint views. */
+  storyPsnr: z.number().optional(),
 });
 
 /** 3D volume rendered by kiln-render (WebGPU); never read by the 2D viewer. */

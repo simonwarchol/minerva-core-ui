@@ -83,7 +83,7 @@
     "geotiff": "2.1.4-beta.0",
     "gl-matrix": "^3.4.3",
     "idb-keyval": "^6.2.1",
-    "kiln-render": "github:simonwarchol/kiln-render#2db8f862d5b0d7f2538cd996b386c342a9d57cc1",
+    "kiln-render": "github:simonwarchol/kiln-render#c1bae0e1233e3b49022b9a9feef449e52a917885",
     "kiln-upstream": "file:vendor/kiln/kiln-render-upstream-edd7620.tgz",
     "lefthook": "^2.1.1",
     "lzw-tiff-decoder": "^0.1.1",

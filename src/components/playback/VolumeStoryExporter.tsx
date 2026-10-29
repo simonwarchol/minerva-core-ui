@@ -84,7 +84,8 @@ const STORY_VIEWS_PER_VIEW = 2 / 3;
 const STAGE_SPAN: Record<string, [number, number]> = {
   fit: [0, 0.1],
   capture: [0.1, 0.4],
-  train: [0.5, 0.5],
+  train: [0.5, 0.4],
+  evaluate: [0.9, 0.1],
   done: [1, 0],
 };
 
@@ -147,6 +148,7 @@ export function VolumeStoryExporter(props: {
           useAppStore.getState().showOnlyChannelGroup(group.id);
           await view.waitUntilReady(abort.signal);
           const psnrs: number[] = [];
+          const storyPsnrs: number[] = [];
           const story = storyCameras(
             look,
             channelGroups,
@@ -160,7 +162,7 @@ export function VolumeStoryExporter(props: {
             resolution: preset.resolution,
             evaluateViews: 4,
             tileSplits: preset.tileSplits,
-            // Tiled builds (High) leave these out; kiln ignores them there.
+            // Tiled builds (High) train each tile on the ones that frame it.
             extraViews: story.train,
             evaluateAt: story.evaluate.length > 0 ? story.evaluate : undefined,
             targetCount: size,
@@ -173,14 +175,18 @@ export function VolumeStoryExporter(props: {
             },
             onProgress: (p: BuildProgress) => {
               if (Number.isFinite(p.psnr)) psnrs.push(p.psnr as number);
+              if (Number.isFinite(p.psnrAt))
+                storyPsnrs.push(p.psnrAt as number);
               const [start, span] = STAGE_SPAN[p.stage] ?? [0, 0];
               report(p.label, (tile + start + span * p.fraction) / tiles);
             },
           });
-          const psnr =
-            psnrs.length > 0
-              ? psnrs.reduce((a, b) => a + b, 0) / psnrs.length
+          const mean = (xs: number[]) =>
+            xs.length > 0
+              ? xs.reduce((a, b) => a + b, 0) / xs.length
               : undefined;
+          const psnr = mean(psnrs);
+          const storyPsnr = mean(storyPsnrs);
           rememberTrainedSplats(look, channelClouds);
           report("Saving splats…", 1);
           const channelIndex = (id: string) =>
@@ -203,6 +209,7 @@ export function VolumeStoryExporter(props: {
               url,
               count: cloud.count,
               ...(psnr !== undefined ? { psnr } : {}),
+              ...(storyPsnr !== undefined ? { storyPsnr } : {}),
             });
           }
         }
