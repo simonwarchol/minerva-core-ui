@@ -47,6 +47,35 @@ export async function probeImsVolume(url: string): Promise<VolumeProbe> {
   }
 }
 
+/** Where a volume's saved chunk index is hosted next to it. */
+export function chunkIndexBeside(url: string): string {
+  const u = new URL(url, window.location.href);
+  u.pathname += ".index";
+  return u.href;
+}
+
+/**
+ * A saved chunk index of `channels` to export with a story, or null when one
+ * is hosted next to the volume (viewers read that one).
+ */
+export async function chunkIndexForExport(
+  url: string,
+  channels: number[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<Uint8Array | null> {
+  const { ImarisDataProvider } = await loadKiln();
+  const provider = new ImarisDataProvider(url, { workers: 1 });
+  try {
+    await provider.initialize();
+    if ((await provider.chunkIndexInUse()) === chunkIndexBeside(url)) {
+      return null;
+    }
+    return await provider.buildChunkIndex(channels, onProgress);
+  } finally {
+    provider.dispose();
+  }
+}
+
 const to255 = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
 
 /**

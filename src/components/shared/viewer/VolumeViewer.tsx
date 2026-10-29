@@ -246,6 +246,11 @@ export const VolumeViewer = React.memo(function VolumeViewer({
   preferSplats = false,
 }: VolumeViewerProps) {
   const url = image.source?.kind === "volume" ? image.source.url : "";
+  // The story's saved chunk index; without one kiln looks next to the volume.
+  const savedIndex =
+    image.source?.kind === "volume" && image.source.chunkIndex
+      ? new URL(image.source.chunkIndex, documentUrl).href
+      : undefined;
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const liveRef = React.useRef<Live | null>(null);
   /**
@@ -342,6 +347,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         if (cancelled) return;
         const provider = new ImarisDataProvider(url, {
           channels: loadSet,
+          ...(savedIndex ? { chunkIndex: savedIndex } : {}),
         });
         // Splats first: no voxels until the volume shows.
         const releaseBricks = holdBricks(provider);
@@ -381,7 +387,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
       }
       useAppStore.getState().setViewerImageLayersLoaded(false);
     };
-  }, [url, loadSet, attempt]);
+  }, [url, savedIndex, loadSet, attempt]);
 
   // Thumbnails wait for this, as for 2D image layers: the coarsest level, or
   // splats on screen.

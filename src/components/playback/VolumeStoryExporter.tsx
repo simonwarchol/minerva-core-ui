@@ -22,6 +22,7 @@ import {
   writeStoryBundleSidecars,
 } from "@/lib/storyExport/storyBundle";
 import {
+  chunkIndexForExport,
   isVolumeImage,
   loadKiln,
   useVolumeImage,
@@ -206,6 +207,39 @@ export function VolumeStoryExporter(props: {
           }
         }
       }
+      // Viewers skip the volume's chunk B-trees with a saved index: write one
+      // for the story's channels unless it's hosted next to the volume.
+      let chunkIndex: string | undefined;
+      if (volumeImage?.source?.kind === "volume") {
+        const grouped = volumeImage.channels
+          .filter((c) =>
+            channelGroups.some((g) =>
+              g.channels.some((r) => r.channelId === c.id),
+            ),
+          )
+          .map((c) => c.index);
+        const bytes = await chunkIndexForExport(
+          volumeImage.source.url,
+          grouped.length > 0
+            ? grouped
+            : volumeImage.channels.map((c) => c.index),
+          (done, total) =>
+            setPhase({
+              kind: "running",
+              group: looks.length,
+              label: `Indexing the volume (${done}/${total})…`,
+              ratio: done / total,
+            }),
+        );
+        if (bytes) {
+          chunkIndex = `volume/${volumeImage.basename ?? "volume.ims"}.index`;
+          await writeDirectoryFile(
+            props.directory_handle,
+            chunkIndex,
+            bytes as Uint8Array<ArrayBuffer>,
+          );
+        }
+      }
       setPhase({
         kind: "running",
         group: looks.length,
@@ -222,6 +256,7 @@ export function VolumeStoryExporter(props: {
                 url: im.source.url,
                 format: im.source.format,
                 ...(splats.length > 0 ? { splats } : {}),
+                ...(chunkIndex ? { chunkIndex } : {}),
               },
             }
           : im,

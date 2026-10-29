@@ -192,6 +192,11 @@ export const ImageSourceVolumeSchema = z.object({
   url: z.string().min(1),
   format: z.literal("ims"),
   splats: z.array(VolumeSplatsSchema).optional(),
+  /**
+   * Saved chunk index (relative to `document.json` or absolute), written by
+   * story export when none is hosted next to the volume as "<url>.index".
+   */
+  chunkIndex: z.string().min(1).optional(),
 });
 
 export const ImageSourceSchema = z.discriminatedUnion("kind", [
