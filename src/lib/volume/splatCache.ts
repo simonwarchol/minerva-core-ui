@@ -5,6 +5,7 @@ import type {
   VolumeSplats,
 } from "@/lib/stores/documentSchema";
 import { loadKiln } from "./imsVolume";
+import { ms, perfLog } from "./perf";
 import { DEFAULT_DENSITY, interpolateView3d, isClipped } from "./view3d";
 import type { ChannelSplats } from "./volumeViewerBridge";
 
@@ -303,11 +304,17 @@ function fetchPly(url: string, label: string): Promise<ChannelSplats["cloud"]> {
   let p = fetched.get(url);
   if (!p) {
     p = (async () => {
+      const t0 = performance.now();
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Splats ${label}: HTTP ${res.status}`);
       const bytes = new Uint8Array(await res.arrayBuffer());
       const { readPly } = await loadKiln();
-      return readPly(bytes);
+      const t1 = performance.now();
+      const cloud = readPly(bytes);
+      perfLog(
+        `splats ${label}: ${(bytes.length / 2 ** 20).toFixed(1)} MB fetched in ${ms(t1 - t0)}, parsed in ${ms(performance.now() - t1)} (${cloud.count.toLocaleString()} Gaussians)`,
+      );
+      return cloud;
     })();
     p.catch(() => fetched.delete(url));
     fetched.set(url, p);

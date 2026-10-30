@@ -26,6 +26,7 @@ import {
   useDocumentStore,
 } from "@/lib/stores/documentStore";
 import { loadKiln } from "@/lib/volume/imsVolume";
+import { ms, perfLog } from "@/lib/volume/perf";
 import {
   documentSplatsFor,
   hasSplatsFor,
@@ -253,6 +254,8 @@ export const VolumeViewer = React.memo(function VolumeViewer({
       : undefined;
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const liveRef = React.useRef<Live | null>(null);
+  /** Perf logging: when the 3D view last started opening. */
+  const openedAtRef = React.useRef(0);
   /**
    * View to open with: the last one (re-opening with other channels keeps the
    * camera) or a waypoint's, requested before the volume finished opening.
@@ -336,6 +339,8 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     void attempt; // "Retry"
     let cancelled = false;
     setStatus("loading");
+    const openedAt = performance.now();
+    openedAtRef.current = openedAt;
     void (async () => {
       try {
         if (!("gpu" in navigator) || !navigator.gpu) {
@@ -369,6 +374,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         // After the mode: channel opacity depends on it.
         applyChannels(live, layersRef.current);
         setSettings(withoutCamera(readView(viewer)));
+        perfLog(`3D view ready in ${ms(performance.now() - openedAt)}`);
         setStatus("ready");
       } catch (e) {
         if (cancelled) return;
@@ -487,6 +493,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     setSplatState("loading");
     void (async () => {
       try {
+        const t0 = performance.now();
         const parts = await splatCloudsFor(
           inputs.image,
           inputs.look,
@@ -494,6 +501,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         );
         const kiln = await loadKiln();
         if (cancelled || liveRef.current !== live || !parts) return;
+        const t1 = performance.now();
         const slots = parts.map(({ channelId }) => {
           const index = inputs.image.channels.find(
             (c) => c.id === channelId,
@@ -514,10 +522,14 @@ export const VolumeViewer = React.memo(function VolumeViewer({
         }
         // None of its channels loaded yet: the volume is re-opening for them.
         if (!composed.cloud) return;
+        const t2 = performance.now();
         if (viewer.splats.cloud !== composed.cloud) {
           viewer.setSplats(composed.cloud);
         }
         viewer.displayMode = "splats";
+        perfLog(
+          `splats shown: ${parts.length} clouds in ${ms(t1 - t0)}, merged in ${ms(t2 - t1)}, set in ${ms(performance.now() - t2)}; ${ms(performance.now() - openedAtRef.current)} after the 3D view started opening`,
+        );
         setSplatState("idle");
       } catch (e) {
         if (cancelled) return;
