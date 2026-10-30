@@ -1,7 +1,6 @@
 import {
   applyVisibilityTransition,
   buildCompositedIntensityLayers,
-  isStackVisible,
   sourceChannelInAnyGroup,
 } from "@/lib/imaging/channelCompositor";
 import {
@@ -685,7 +684,10 @@ export function reconcileUngroupedStackPalette(
   const sourceChannels = flattenImageChannelsInDocumentOrder(doc.images);
   for (const sc of sourceChannels) {
     if (sourceChannelInAnyGroup(doc.channelGroups, sc.id)) continue;
-    if (isStackVisible(prev, sc.id) || !isStackVisible(vis, sc.id)) continue;
+    // Newly turned on: explicitly shown now and not before. A channel without
+    // an entry counts as shown, but a story opens with an empty map: the
+    // first channel turned on would never look new.
+    if (prev[sc.id] === true || vis[sc.id] !== true) continue;
     void optimizeUngroupedStackChannel(sc.id);
   }
 }
