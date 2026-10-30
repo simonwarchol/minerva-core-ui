@@ -168,8 +168,8 @@ importers:
         specifier: ^6.2.1
         version: 6.2.2
       kiln-render:
-        specifier: github:simonwarchol/kiln-render#8a72d478c94944442be21cfb7b896a2c94c6a13c
-        version: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/8a72d478c94944442be21cfb7b896a2c94c6a13c
+        specifier: github:simonwarchol/kiln-render#f5a765e12f7ccd7897afedc4b6c2be9e2ddc389b
+        version: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/f5a765e12f7ccd7897afedc4b6c2be9e2ddc389b
       kiln-upstream:
         specifier: file:vendor/kiln/kiln-render-upstream-edd7620.tgz
         version: kiln-render@file:vendor/kiln/kiln-render-upstream-edd7620.tgz
@@ -2795,8 +2795,8 @@ packages:
     resolution: {integrity: sha512-2RCgs/gBHEcKAS9FE4oM028IgKl/A5OcTmN4oCVuQlfX4xxBTs1S7yMAyzBEisCSVyxk0m0MhhD3chXNkcffSg==, tarball: file:vendor/kiln/kiln-render-upstream-edd7620.tgz}
     version: 0.5.0
 
-  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/8a72d478c94944442be21cfb7b896a2c94c6a13c:
-    resolution: {gitHosted: true, integrity: sha512-+W+/6fIxJ9Mx+5jQKZJycebHZIGE4AB3T5cOoR3UvIiq/fAsrbI9TqRiY1q40Fp7c7dr+w6WNRRx9R/rRYtwPw==, tarball: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/8a72d478c94944442be21cfb7b896a2c94c6a13c}
+  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/f5a765e12f7ccd7897afedc4b6c2be9e2ddc389b:
+    resolution: {gitHosted: true, integrity: sha512-FeGvhSNfFBBMZ6x9Jrcep6ETwYmKyR6aE910RaaKn2HMuESpm5jK7x+oLWE20oDJoD7B7xg9xFeZfvF+bQGJUw==, tarball: https://codeload.github.com/simonwarchol/kiln-render/tar.gz/f5a765e12f7ccd7897afedc4b6c2be9e2ddc389b}
     version: 0.4.1
 
   ktx-parse@0.7.1:
@@ -6972,7 +6972,7 @@ snapshots:
     dependencies:
       '@webgpu/types': 0.1.69
 
-  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/8a72d478c94944442be21cfb7b896a2c94c6a13c:
+  kiln-render@https://codeload.github.com/simonwarchol/kiln-render/tar.gz/f5a765e12f7ccd7897afedc4b6c2be9e2ddc389b:
     dependencies:
       '@webgpu/types': 0.1.69
 
