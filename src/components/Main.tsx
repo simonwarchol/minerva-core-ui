@@ -1319,13 +1319,19 @@ const Content = (props: Props) => {
     const loadGeneration = omeTiffUrlLoadGenerationRef.current;
     const probe = await probeImsVolume(url);
     if (loadGeneration !== omeTiffUrlLoadGenerationRef.current) return;
-    const { image, channelGroups } = buildVolumeImport(url, probe);
+    // As for 2D imports: no channel groups; the import palette colours it.
+    const [image] = await applyPaletteToFlatImportImages([
+      buildVolumeImport(url, probe),
+    ]);
+    if (!image || loadGeneration !== omeTiffUrlLoadGenerationRef.current) {
+      return;
+    }
     clearOmeDerivedCaches();
     setDicomIndexList([]);
     setOmeLoaderEntries([]);
     setJpegLoaderEntries([]);
     setDeniedHandleKeys([]);
-    publishChannelState([image], channelGroups, {
+    publishChannelState([image], [], {
       resetActiveGroup: true,
       transition: { kind: "fresh" },
     });

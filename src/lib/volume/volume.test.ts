@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { visibilitiesShowingOnlyGroup } from "@/lib/imaging/channelCompositor";
-import type { View3d } from "@/lib/stores/documentSchema";
+import type { ChannelGroup, View3d } from "@/lib/stores/documentSchema";
 import { ImageSchema, View3dSchema } from "@/lib/stores/documentSchema";
 import { flattenImageChannelsInDocumentOrder } from "@/lib/stores/documentStore";
 import { waypointToConfigWaypoint } from "@/lib/stores/storeUtils";
@@ -57,6 +57,27 @@ const view = (patch: Partial<View3d> = {}): View3d => ({
 
 const fail = (): never => {
   throw new Error("missing fixture");
+};
+
+/** An imported volume with groups of up to six channels, as an author makes. */
+const imported = (channels: number) => {
+  const image = buildVolumeImport(URL_IMS, probe(channels));
+  const rows = image.channels.map((c, i) => ({
+    id: crypto.randomUUID(),
+    channelId: c.id,
+    color: { r: 255, g: (i % 2) * 255, b: 0 },
+    lowerLimit: 100,
+    upperLimit: 600,
+  }));
+  const channelGroups: ChannelGroup[] = [];
+  for (let i = 0; i < rows.length; i += MAX_VOLUME_CHANNELS) {
+    channelGroups.push({
+      id: crypto.randomUUID(),
+      name: `Group ${channelGroups.length + 1}`,
+      channels: rows.slice(i, i + MAX_VOLUME_CHANNELS),
+    });
+  }
+  return { image, channelGroups };
 };
 
 /** True when two views would render the same (within float noise). */
@@ -120,7 +141,7 @@ describe("volume channels", () => {
   });
 
   it("shows the active group's channels with its colors and limits", () => {
-    const { image, channelGroups } = buildVolumeImport(URL_IMS, probe(8));
+    const { image, channelGroups } = imported(8);
     const group = channelGroups[1];
     if (!group) throw new Error("expected a second group");
     const sourceChannels = flattenImageChannelsInDocumentOrder([image]);
@@ -152,19 +173,17 @@ describe("volume import", () => {
     expect(looksLikeImsUrl("https://x/y.ome.tif")).toBe(false);
   });
 
-  it("builds a valid image and groups of at most six channels", () => {
-    const { image, channelGroups } = buildVolumeImport(URL_IMS, probe(18));
+  it("builds a valid image without the file's colours", () => {
+    const image = buildVolumeImport(URL_IMS, probe(18));
     expect(() => ImageSchema.parse(image)).not.toThrow();
     expect(image.basename).toBe("LSP22408.ims");
-    expect(channelGroups).toHaveLength(3);
-    expect(
-      channelGroups.every((g) => g.channels.length <= MAX_VOLUME_CHANNELS),
-    ).toBe(true);
+    expect(image.channels.some((c) => c.color)).toBe(false);
     expect(image.channels[3]?.floatRange).toEqual({ min: 0, max: 1000 });
+    expect(image.channels[3]?.lowerLimit).toBe(100);
   });
 
   it("keeps the volume source and waypoint view3d through validation", () => {
-    const { image, channelGroups } = buildVolumeImport(URL_IMS, probe(2));
+    const { image, channelGroups } = imported(2);
     const v = view({ camera: [0.4, 1.2, 1.5, 0.1, 0, -0.1], density: 2 });
     const doc = validateDocumentData({
       metadata: {},
@@ -211,7 +230,7 @@ describe("view3d records", () => {
 
 describe("splat export", () => {
   it("trains each group × render mode the waypoints use, in story order", () => {
-    const { channelGroups: g } = buildVolumeImport(URL_IMS, probe(18));
+    const { channelGroups: g } = imported(18);
     const [a, b, c] = g;
     if (!a || !b || !c) throw new Error("expected three groups");
     const v = (renderMode: View3d["renderMode"], density = 0.1) =>
@@ -250,7 +269,7 @@ describe("splat export", () => {
   });
 
   it("trains on the story's own cameras, waypoints first", () => {
-    const { channelGroups: g } = buildVolumeImport(URL_IMS, probe(2));
+    const { channelGroups: g } = imported(2);
     const [group] = g;
     if (!group) throw new Error("fixture");
     const at = (ry: number, patch: Partial<View3d> = {}) => ({
@@ -287,7 +306,7 @@ describe("splat export", () => {
   });
 
   it("finds the document's splats for a look", () => {
-    const { image, channelGroups } = buildVolumeImport(URL_IMS, probe(2));
+    const { image, channelGroups } = imported(2);
     const group = channelGroups[0];
     if (!group || image.source?.kind !== "volume") throw new Error("fixture");
     const withSplats = {
@@ -325,7 +344,7 @@ describe("splat export", () => {
   });
 
   it("finds a look's per-channel splat files", () => {
-    const { image, channelGroups } = buildVolumeImport(URL_IMS, probe(2));
+    const { image, channelGroups } = imported(2);
     const group = channelGroups[0];
     if (!group || image.source?.kind !== "volume") throw new Error("fixture");
     const [c0, c1] = image.channels;
@@ -353,7 +372,7 @@ describe("splat export", () => {
   });
 
   it("keeps splat files on the volume source through validation", () => {
-    const { image, channelGroups } = buildVolumeImport(URL_IMS, probe(2));
+    const { image, channelGroups } = imported(2);
     const group = channelGroups[0];
     if (!group || image.source?.kind !== "volume") throw new Error("fixture");
     const splats = [

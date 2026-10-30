@@ -1,13 +1,11 @@
 import type { ImsChannelInfo } from "kiln-render";
 import { urlFileName } from "@/lib/imaging/sourceUrl";
 import type {
-  ChannelGroup,
   Image,
   ImageChannel,
   ImageSourceVolume,
 } from "@/lib/stores/documentSchema";
 import { useDocumentStore } from "@/lib/stores/documentStore";
-import { MAX_VOLUME_CHANNELS } from "./volumeChannels";
 
 /** kiln-render is ~2 MB; only stories with a volume load it. */
 export const loadKiln = () => import("./kiln");
@@ -76,51 +74,31 @@ export async function chunkIndexForExport(
   }
 }
 
-const to255 = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
-
 /**
- * Document records for a volume import: the image (channels carry the file's
- * names, colours and display ranges) and channel groups of up to six
- * channels each — the most the volume renderer composites at once.
+ * Document image for a volume import: channels carry the file's names and
+ * display ranges. As with 2D imports there are no channel groups, and the
+ * file's colours (mostly Imaris's default white) aren't used: the import
+ * palette colours channels (`applyPaletteToFlatImportImages`).
  */
-export function buildVolumeImport(
-  url: string,
-  probe: VolumeProbe,
-): { image: Image; channelGroups: ChannelGroup[] } {
-  const imageId = crypto.randomUUID();
-  const rows: ChannelGroup["channels"] = [];
+export function buildVolumeImport(url: string, probe: VolumeProbe): Image {
   const channels: ImageChannel[] = probe.channels.map((c) => {
     const [lo, hi] = c.displayRange ?? c.range;
-    const color = {
-      r: to255(c.color[0]),
-      g: to255(c.color[1]),
-      b: to255(c.color[2]),
-    };
-    const id = crypto.randomUUID();
-    rows.push({
-      id: crypto.randomUUID(),
-      channelId: id,
-      color,
-      lowerLimit: lo,
-      upperLimit: hi,
-    });
     return {
-      id,
+      id: crypto.randomUUID(),
       index: c.index,
       name: c.name || `Channel ${c.index + 1}`,
       kind: "channel",
       sourceDataTypeId: probe.dtype,
       floatRange: { min: c.range[0], max: c.range[1] },
       gmmContrastLimits: { lower: lo, upper: hi },
-      color,
       lowerLimit: lo,
       upperLimit: hi,
     };
   });
   const [sizeX, sizeY] = probe.dimensions;
   const leaf = decodeURIComponent(urlFileName(url));
-  const image: Image = {
-    id: imageId,
+  return {
+    id: crypto.randomUUID(),
     sizeX,
     sizeY,
     sizeC: channels.length,
@@ -137,19 +115,6 @@ export function buildVolumeImport(
     channels,
     source: { kind: "volume", url, format: "ims" },
   };
-  const channelGroups: ChannelGroup[] = [];
-  for (let i = 0; i < rows.length; i += MAX_VOLUME_CHANNELS) {
-    const members = rows.slice(i, i + MAX_VOLUME_CHANNELS);
-    channelGroups.push({
-      id: crypto.randomUUID(),
-      name:
-        channels.length <= MAX_VOLUME_CHANNELS
-          ? "All channels"
-          : `Channels ${i + 1}–${i + members.length}`,
-      channels: members,
-    });
-  }
-  return { image, channelGroups };
 }
 
 export function isVolumeImage(

@@ -111,7 +111,8 @@ export function VolumeStoryExporter(props: {
     () => looksToTrain(channelGroups, waypoints, activeGroupId),
     [channelGroups, waypoints, activeGroupId],
   );
-  const [train, setTrain] = useState(true);
+  // Splats are trained per channel group: none without one.
+  const [train, setTrain] = useState(looks.length > 0);
   const [quality, setQuality] = useState<Quality>("standard");
   const [size, setSize] = useState<number>(QUALITY.standard.size);
   const [phase, setPhase] = useState<Phase>({ kind: "confirm" });
@@ -326,13 +327,20 @@ export function VolumeStoryExporter(props: {
               <input
                 type="checkbox"
                 checked={train}
+                disabled={looks.length === 0}
                 onChange={(e) => setTrain(e.currentTarget.checked)}
               />{" "}
-              Train splats for{" "}
-              {looks.length === 1 && looks[0]
-                ? `“${lookLabel(looks[0].group.name, looks[0].look)}”`
-                : `${looks.length} looks (channel group × render mode)`}{" "}
-              ({quality === "high" ? "15–30" : "3–8"} minutes each)
+              {looks.length === 0 ? (
+                "Train splats (make a channel group to train them for)"
+              ) : (
+                <>
+                  Train splats for{" "}
+                  {looks.length === 1 && looks[0]
+                    ? `“${lookLabel(looks[0].group.name, looks[0].look)}”`
+                    : `${looks.length} looks (channel group × render mode)`}{" "}
+                  ({quality === "high" ? "15–30" : "3–8"} minutes each)
+                </>
+              )}
             </label>
             {train ? (
               <>
