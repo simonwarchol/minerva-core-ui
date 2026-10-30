@@ -47,8 +47,9 @@ import {
   WAYPOINT_FLY_MS,
 } from "@/lib/volume/view3d";
 import {
-  channelsToLoad,
   limitsToWindow,
+  slotSwaps,
+  slotsToOpen,
   type VolumeChannelLayer,
   volumeChannelLayers,
 } from "@/lib/volume/volumeChannels";
@@ -311,21 +312,36 @@ export const VolumeViewer = React.memo(function VolumeViewer({
   );
   const layersRef = React.useRef(layers);
   layersRef.current = layers;
+  const channelCount = image.channels.length;
+  // What the volume opens with: every slot, the shown channels first.
   const [loadSet, setLoadSet] = React.useState<number[]>(() =>
-    channelsToLoad(
+    slotsToOpen(
       layers.map((l) => l.sourceIndex),
-      null,
+      channelCount,
     ),
   );
+  // Bumped when slots are repointed: per-channel splats re-tag.
+  const [slotsVersion, setSlotsVersion] = React.useState(0);
   React.useEffect(() => {
-    const next = channelsToLoad(
-      layers.map((l) => l.sourceIndex),
-      loadSet,
-    );
-    if (next.join(",") !== loadSet.join(",")) setLoadSet(next);
+    const wanted = layers.map((l) => l.sourceIndex);
     const live = liveRef.current;
+    // Other channels: repoint the slots of channels no longer shown, keeping
+    // the viewer and everything else it has loaded.
+    const swaps = slotSwaps(
+      wanted,
+      live ? live.provider.activeChannels : loadSet,
+    );
+    if (swaps === null || (swaps.length > 0 && !live)) {
+      setLoadSet(slotsToOpen(wanted, channelCount));
+    } else if (live && swaps.length > 0) {
+      const swapped = swaps.every(([slot, channel]) =>
+        live.viewer.setChannelSource(slot, channel),
+      );
+      if (swapped) setSlotsVersion((v) => v + 1);
+      else setLoadSet(slotsToOpen(wanted, channelCount));
+    }
     if (live) applyChannels(live, layers);
-  }, [layers, loadSet]);
+  }, [layers, loadSet, channelCount]);
   // Channel opacity applies in Blend only.
   React.useEffect(() => {
     void settings.renderMode; // re-apply when the mode changes
@@ -482,6 +498,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     "idle" | "loading" | "error"
   >("idle");
   React.useEffect(() => {
+    void slotsVersion; // per-channel clouds are tagged by slot
     const live = liveRef.current;
     if (status !== "ready" || !live || !splatSource) {
       setSplatState("idle");
@@ -540,7 +557,7 @@ export const VolumeViewer = React.memo(function VolumeViewer({
     return () => {
       cancelled = true;
     };
-  }, [status, splatSource, documentUrl]);
+  }, [status, splatSource, documentUrl, slotsVersion]);
 
   // Voxels load once the volume shows (or the splats can't).
   React.useEffect(() => {
@@ -578,11 +595,13 @@ export const VolumeViewer = React.memo(function VolumeViewer({
               const covered = layersRef.current.every((l) =>
                 shown.includes(l.sourceIndex),
               );
+              // Repointed slots reload into resident bricks: wait for those.
               if (
                 live &&
                 statusRef.current === "ready" &&
                 covered &&
-                live.viewer.streamingManager.baseLodLoaded
+                live.viewer.streamingManager.baseLodLoaded &&
+                !live.viewer.streamingManager.reloading
               ) {
                 resolve();
               } else {

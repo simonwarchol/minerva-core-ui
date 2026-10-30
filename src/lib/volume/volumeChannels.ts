@@ -134,15 +134,39 @@ export function limitsToWindow(
 }
 
 /**
- * Source channels to stream. Keeps the loaded set when it already covers
- * what is shown (switching groups within it costs nothing); otherwise the
- * wanted channels in display order.
+ * Source channels a volume opens with, one per kiln channel slot: the wanted
+ * ones, then others in file order, up to six. Every slot exists from the
+ * start, so showing other channels later repoints slots (`slotSwaps`)
+ * instead of reopening the volume.
  */
-export function channelsToLoad(
+export function slotsToOpen(
   wanted: readonly number[],
-  loaded: readonly number[] | null,
+  channelCount: number,
 ): number[] {
-  if (loaded && wanted.every((c) => loaded.includes(c))) return [...loaded];
-  const unique = [...new Set(wanted)].slice(0, MAX_VOLUME_CHANNELS);
-  return unique.length > 0 ? unique : [0];
+  const slots = [...new Set(wanted)].slice(0, MAX_VOLUME_CHANNELS);
+  for (let c = 0; c < channelCount && slots.length < MAX_VOLUME_CHANNELS; c++) {
+    if (!slots.includes(c)) slots.push(c);
+  }
+  return slots.length > 0 ? slots : [0];
+}
+
+/**
+ * Slot changes ([slot, channel]) that bring every wanted channel into
+ * `slots`, reusing slots whose channels aren't wanted; empty when all are
+ * loaded, null when there are too few slots.
+ */
+export function slotSwaps(
+  wanted: readonly number[],
+  slots: readonly number[],
+): Array<[number, number]> | null {
+  const want = new Set(wanted);
+  const free = slots.flatMap((c, slot) => (want.has(c) ? [] : [slot]));
+  const swaps: Array<[number, number]> = [];
+  for (const c of want) {
+    if (slots.includes(c)) continue;
+    const slot = free.shift();
+    if (slot === undefined) return null;
+    swaps.push([slot, c]);
+  }
+  return swaps;
 }

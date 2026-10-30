@@ -23,9 +23,10 @@ import {
   isClipped,
 } from "./view3d";
 import {
-  channelsToLoad,
   limitsToWindow,
   MAX_VOLUME_CHANNELS,
+  slotSwaps,
+  slotsToOpen,
   volumeChannelLayers,
 } from "./volumeChannels";
 
@@ -134,10 +135,13 @@ describe("volume channels", () => {
     expect(limitsToWindow([1, 2], [5, 5])).toEqual({ center: 0.5, width: 1 });
   });
 
-  it("keeps the streamed set when it covers the wanted channels", () => {
-    expect(channelsToLoad([2, 0], [0, 1, 2])).toEqual([0, 1, 2]);
-    expect(channelsToLoad([7, 8], [0, 1, 2])).toEqual([7, 8]);
-    expect(channelsToLoad([], null)).toEqual([0]);
+  it("opens every slot and repoints unshown ones for other channels", () => {
+    expect(slotsToOpen([7, 2], 34)).toEqual([7, 2, 0, 1, 3, 4]);
+    expect(slotsToOpen([1], 2)).toEqual([1, 0]);
+    expect(slotsToOpen([], 0)).toEqual([0]);
+    expect(slotSwaps([2, 0], [0, 1, 2])).toEqual([]);
+    expect(slotSwaps([0, 9], [0, 1, 2])).toEqual([[1, 9]]);
+    expect(slotSwaps([7, 8, 9], [0, 1])).toBeNull();
   });
 
   it("shows the active group's channels with its colors and limits", () => {
