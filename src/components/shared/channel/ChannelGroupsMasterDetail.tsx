@@ -90,6 +90,7 @@ import {
   patchSourceChannelOnImages,
   uniqueImageDisplayLabels,
 } from "@/lib/stores/storeUtils";
+import { isVolumeImage } from "@/lib/volume/imsVolume";
 import styles from "./ChannelGroupsMasterDetail.module.css";
 
 const CHANNEL_DRAG_MIME = "application/x-minerva-channel-ref";
@@ -902,12 +903,14 @@ export const ChannelGroupsMasterDetail = (
     [setChannelGroups, sourceChannels],
   );
 
+  // Fitting needs a 2D raster; volume channels keep the file's display range.
   const canFitContrast = (sc: Channel | undefined): sc is Channel =>
     Boolean(
       props.contrastEditable &&
         sc &&
         !isMaskChannel(sc) &&
-        !isRgbDisplayChannel(sc, sourceChannels),
+        !isRgbDisplayChannel(sc, sourceChannels) &&
+        !isVolumeImage(images.find((im) => im.id === sc.imageId)),
     );
 
   const channelMoreMenu = (

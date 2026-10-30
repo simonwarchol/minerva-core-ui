@@ -152,6 +152,7 @@ import {
   buildVolumeImport,
   isVolumeImage,
   probeImsVolume,
+  volumeHistograms,
 } from "@/lib/volume/imsVolume";
 import { ensureDefaultWaypoint } from "@/lib/waypoints/ensureDefaultWaypoint";
 import {
@@ -2016,11 +2017,29 @@ const Content = (props: Props) => {
 
   const onEnsureChannelHistograms = React.useCallback(
     async (channelIds: string[]) => {
-      if (omeLoaderEntries.length === 0 || channelIds.length === 0) return;
-      const imageKey = viewerImageKey;
-      if (!imageKey) return;
+      if (channelIds.length === 0) return;
       const doc = useDocumentStore.getState();
       const prevCh = documentSourceChannels(doc);
+      const byChannelId = new Map<string, ConfigSourceDistribution>();
+
+      // Volumes: the histograms stored in the .ims file.
+      for (const image of doc.images) {
+        if (!isVolumeImage(image)) continue;
+        const wanted = prevCh.filter(
+          (c) => c.imageId === image.id && channelIds.includes(c.id),
+        );
+        if (wanted.length === 0) continue;
+        const map = await volumeHistograms(
+          image.source.url,
+          wanted.map((c) => c.index),
+        ).catch(() => null);
+        for (const c of wanted) {
+          const dist = map?.get(c.index);
+          if (dist) byChannelId.set(c.id, dist);
+        }
+      }
+
+      const imageKey = viewerImageKey;
       const loaderByImageId = new Map(
         omeLoaderEntries.map((e) => [e.sourceImageId, e.loader] as const),
       );
@@ -2037,7 +2056,6 @@ const Content = (props: Props) => {
           channelId: sc.id,
         });
       }
-      if (pairs.length === 0) return;
 
       const byImage = new Map<string, Pair[]>();
       for (const p of pairs) {
@@ -2046,10 +2064,9 @@ const Content = (props: Props) => {
         byImage.set(p.imageId, list);
       }
 
-      const byChannelId = new Map<string, ConfigSourceDistribution>();
       for (const [imageId, plist] of byImage) {
         const loader = loaderByImageId.get(imageId);
-        if (!loader) continue;
+        if (!loader || !imageKey) continue;
         const uniqueIdx = [...new Set(plist.map((p) => p.index))];
         const ranges = new Map<number, { min: number; max: number }>();
         for (const p of plist) {
@@ -2089,6 +2106,7 @@ const Content = (props: Props) => {
     storyImageSource !== JPEG_OME_TIFF_CONTRAST_IMAGE_SOURCE &&
     (omeLoaderEntries.length > 0 ||
       dicomIndexList.length > 0 ||
+      volumeImage !== undefined ||
       jpegTransferFromImageSource(storyImageSource) === "cube-root");
   const channelProps = {
     hiddenChannel: true,

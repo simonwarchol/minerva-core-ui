@@ -490,8 +490,12 @@ export function ChannelContrastEditor(props: ChannelContrastEditorProps) {
   const minFrac = sliderMin / scale.sliderSteps;
   const maxFrac = sliderMax / scale.sliderSteps;
 
+  // Log heights (YScale "log", e.g. volumes, where background fills the
+  // first bin) keep the rest of the histogram visible.
   const { linePath: histLinePath, fillPath: histFillPath } =
-    histogramSparklinePaths(chart.yValues);
+    histogramSparklinePaths(
+      dist.YScale === "log" ? chart.yValues.map(Math.log1p) : chart.yValues,
+    );
   const histogramClipId = React.useId();
   const histogramViewX = 1.15;
   const histogramViewWidth = 96.7;
